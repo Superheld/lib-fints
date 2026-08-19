@@ -4,6 +4,7 @@ import { Language } from '../codes.js';
 import { FinTSConfig } from '../config.js';
 import { HKSAL } from '../segments/HKSAL.js';
 import { HKWPD } from '../segments/HKWPD.js';
+import { ElectronicStatementInteraction } from '../interactions/electronicStatementInteraction.js';
 
 // A bank that gives a securities account and the current account it settles through
 // the same number, distinguishing them only by sub-account id. That is within the
@@ -137,5 +138,33 @@ describe('matching an account the bank itself named', () => {
 		// before any of them reached its order. That is exactly what happened once.
 		const config = configWith([giro, depot]);
 		expect(config.matchBankAccount({ accountNumber: '1234567890' })).toBeUndefined();
+	});
+});
+
+describe('what a caller can reach from the package root', () => {
+	it('exports the interaction classes, not only their response types', async () => {
+		// `startCustomerOrderInteraction` is public and takes one of these. Before this,
+		// building one meant importing from `dist/` by path — the door was public and
+		// the handle was not.
+		const index = await import('../index.js');
+		for (const name of [
+			'BalanceInteraction',
+			'CreditCardStatementInteraction',
+			'CustomerOrderInteraction',
+			'ElectronicStatementInteraction',
+			'PortfolioInteraction',
+			'SepaAccountInteraction',
+			'StatementInteractionCAMT',
+			'StatementInteractionMT940',
+		]) {
+			expect(typeof (index as Record<string, unknown>)[name], name).toBe('function');
+		}
+	});
+
+	it('refuses an electronic statement for an account that does not declare HKEKA', () => {
+		// Every other business transaction refused here already; this one sent the order.
+		const config = configWith([giro]);
+		const interaction = new ElectronicStatementInteraction(giro);
+		expect(() => interaction.createSegments(config)).toThrow(/does not support business transaction 'HKEKA'/);
 	});
 });

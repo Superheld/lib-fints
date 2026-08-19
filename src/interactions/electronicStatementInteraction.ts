@@ -78,6 +78,13 @@ export class ElectronicStatementInteraction extends CustomerOrderInteraction {
 
 	createSegments(init: FinTSConfig): Segment[] {
 		const bankAccount = init.getBankAccount(this.account);
+		// The other business transactions refuse here rather than sending an order the
+		// account was never declared for; this one did not, alone among them.
+		if (!init.isAccountTransactionSupported(this.account, this.segId)) {
+			throw Error(
+				`Account ${describeAccount(this.account)} does not support business transaction '${this.segId}'`,
+			);
+		}
 		const version = init.getMaxSupportedTransactionVersion(HKEKA.Id);
 		if (!version) {
 			throw Error(`There is no supported version for business transaction '${HKEKA.Id}'`);

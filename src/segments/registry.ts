@@ -25,6 +25,7 @@ import { HITANS } from './HITANS.js';
 import { HIUPA } from './HIUPA.js';
 import { HIUPD } from './HIUPD.js';
 import { HIWPD } from './HIWPD.js';
+import { HIWPDS } from './HIWPDS.js';
 import { HKCAZ } from './HKCAZ.js';
 import { HKEKA } from './HKEKA.js';
 import { HKEND } from './HKEND.js';
@@ -86,6 +87,7 @@ export function registerSegments() {
 	registerSegmentDefinition(new HIEKAS());
 	registerSegmentDefinition(new HKWPD());
 	registerSegmentDefinition(new HIWPD());
+	registerSegmentDefinition(new HIWPDS());
 	registerSegmentDefinition(new HKWPD());
 	registerSegmentDefinition(new HIWPD());
 	registerSegmentDefinition(new HKSPA());

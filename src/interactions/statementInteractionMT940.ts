@@ -1,3 +1,4 @@
+import { describeAccount, type AccountRef } from '../bankAccount.js';
 import type { FinTSConfig } from '../config.js';
 import { internationalAccount, nationalAccount } from '../accountDescriptor.js';
 import type { Message } from '../message.js';
@@ -9,7 +10,7 @@ import { CustomerOrderInteraction, type StatementResponse } from './customerInte
 
 export class StatementInteractionMT940 extends CustomerOrderInteraction {
 	constructor(
-		public accountNumber: string,
+		public account: AccountRef,
 		public from?: Date,
 		public to?: Date,
 	) {
@@ -17,21 +18,21 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 	}
 
 	createSegments(init: FinTSConfig): Segment[] {
-		const bankAccount = init.getBankAccount(this.accountNumber);
+		const bankAccount = init.getBankAccount(this.account);
 		const version = init.getMaxSupportedTransactionVersion(HKKAZ.Id);
 
 		if (!version) {
 			throw Error(`There is no supported version for business transaction '${HKKAZ.Id}'`);
 		}
 
-		const account =
+		const descriptor =
 			version <= 6
 				? nationalAccount(bankAccount)
 				: internationalAccount(init, bankAccount);
 
 		const hkkaz: HKKAZSegment = {
 			header: { segId: HKKAZ.Id, segNr: 0, version: version },
-			account,
+			account: descriptor,
 			allAccounts: false,
 			from: this.from,
 			to: this.to,

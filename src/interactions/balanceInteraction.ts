@@ -1,5 +1,6 @@
 import type { AccountBalance } from '../accountBalance.js';
 import { CreditDebit } from '../codes.js';
+import { describeAccount, type AccountRef } from '../bankAccount.js';
 import type { FinTSConfig } from '../config.js';
 import { internationalAccount, nationalAccount } from '../accountDescriptor.js';
 import type { Balance } from '../dataGroups/Balance.js';
@@ -14,15 +15,15 @@ export interface AccountBalanceResponse extends ClientResponse {
 }
 
 export class BalanceInteraction extends CustomerOrderInteraction {
-	constructor(public accountNumber: string) {
+	constructor(public account: AccountRef) {
 		super(HKSAL.Id, HISAL.Id);
 	}
 
 	createSegments(init: FinTSConfig): Segment[] {
-		const bankAccount = init.getBankAccount(this.accountNumber);
-		if (!init.isAccountTransactionSupported(this.accountNumber, this.segId)) {
+		const bankAccount = init.getBankAccount(this.account);
+		if (!init.isAccountTransactionSupported(this.account, this.segId)) {
 			throw Error(
-				`Account ${this.accountNumber} does not support business transaction '${this.segId}'`,
+				`Account ${describeAccount(this.account)} does not support business transaction '${this.segId}'`,
 			);
 		}
 
@@ -32,14 +33,14 @@ export class BalanceInteraction extends CustomerOrderInteraction {
 			throw Error(`There is no supported version for business transaction '${HKSAL.Id}`);
 		}
 
-		const account =
+		const descriptor =
 			version <= 6
 				? nationalAccount(bankAccount)
 				: internationalAccount(init, bankAccount);
 
 		const hksal: HKSALSegment = {
 			header: { segId: HKSAL.Id, segNr: 0, version: version },
-			account,
+			account: descriptor,
 			allAccounts: false,
 		};
 

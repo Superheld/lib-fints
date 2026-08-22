@@ -59,3 +59,43 @@ describe('parse', () => {
 		expect(statement.transactions[1].additionalInformation).toBe('Additional Information');
 	});
 });
+
+describe('entry date year', () => {
+	/**
+	 * The entry date in field :61: carries only MMDD. Its year is derived from the value
+	 * date, and the two can straddle a month or year boundary in either direction.
+	 */
+	function entryDateOf(valueDate: string, entryDate: string): Date {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			`:61:${valueDate}${entryDate}DR600,NTRFNONREF//55555\r\n` +
+			':86:020?00UEBERWEISUNG?20Transfer\r\n';
+
+		const statements = new Mt940Parser(input).parse();
+		return statements[0].transactions[0].entryDate;
+	}
+
+	it('keeps the value date year when both fall in the same month', () => {
+		expect(entryDateOf('250930', '0930')).toEqual(new Date('2025-09-30T00:00'));
+	});
+
+	it('keeps the value date year when the entry follows a backdated value date', () => {
+		// A transfer settled on the last day of September and posted on the first of
+		// October. Comparing the months alone would push this back a full year.
+		expect(entryDateOf('250930', '1001')).toEqual(new Date('2025-10-01T00:00'));
+	});
+
+	it('takes the previous year when the entry precedes a value date in January', () => {
+		expect(entryDateOf('260102', '1230')).toEqual(new Date('2025-12-30T00:00'));
+	});
+
+	it('takes the next year when the entry follows a value date in December', () => {
+		expect(entryDateOf('251230', '0102')).toEqual(new Date('2026-01-02T00:00'));
+	});
+
+	it('falls back to the value date when no entry date is given', () => {
+		expect(entryDateOf('250930', '')).toEqual(new Date('2025-09-30T00:00'));
+	});
+});

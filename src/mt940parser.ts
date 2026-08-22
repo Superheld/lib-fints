@@ -114,18 +114,10 @@ export class Mt940Parser {
 						break;
 					case ':61:': {
 						const valueDate = this.parseDate(true);
-						let entryDate = valueDate;
 						const entryDateString = this.tokenizer.parseNextToken(TokenType.ShortDate, false);
-						if (entryDateString) {
-							const valueYear = valueDate.getFullYear();
-							const valueMonth = valueDate.getMonth() + 1;
-							const entryMonth = parseInt(entryDateString.substring(0, 2), 10);
-							const entryDay = parseInt(entryDateString.substring(2, 4), 10);
-							const entryYear = entryMonth <= valueMonth ? valueYear : valueYear - 1;
-							entryDate = new Date(entryYear, entryMonth - 1, entryDay);
-						} else {
-							entryDate = valueDate;
-						}
+						const entryDate = entryDateString
+							? this.parseEntryDate(entryDateString, valueDate)
+							: valueDate;
 
 						const creditDebit = this.tokenizer.parseNextToken(TokenType.CreditDebit, true);
 						const fundsCode = this.tokenizer.parseNextToken(TokenType.SingleAlpha, false);
@@ -345,6 +337,36 @@ export class Mt940Parser {
 		const day = parseInt(date.substring(4, 6), 10);
 
 		return new Date(year, month - 1, day);
+	}
+
+	/**
+	 * Resolves the entry date of field :61:, which carries only MMDD.
+	 *
+	 * The year has to be derived from the value date, and the order of the two dates does
+	 * not carry it: a bank posts an entry before its value date around the turn of a year,
+	 * and after it whenever the value date is backdated - routine for instant transfers
+	 * settled at the end of a month. What does hold is that both dates lie close together,
+	 * so of the three possible years the one placing the entry date nearest the value date
+	 * is the intended one. This covers a year boundary in either direction.
+	 */
+	parseEntryDate(entryDateString: string, valueDate: Date): Date {
+		const entryMonth = parseInt(entryDateString.substring(0, 2), 10);
+		const entryDay = parseInt(entryDateString.substring(2, 4), 10);
+		const valueYear = valueDate.getFullYear();
+
+		let entryDate = new Date(valueYear, entryMonth - 1, entryDay);
+		let smallestDistance = Math.abs(entryDate.getTime() - valueDate.getTime());
+
+		for (const year of [valueYear - 1, valueYear + 1]) {
+			const candidate = new Date(year, entryMonth - 1, entryDay);
+			const distance = Math.abs(candidate.getTime() - valueDate.getTime());
+			if (distance < smallestDistance) {
+				entryDate = candidate;
+				smallestDistance = distance;
+			}
+		}
+
+		return entryDate;
 	}
 
 	parseAmount(creditDebit: string, isMandatory = true): number {

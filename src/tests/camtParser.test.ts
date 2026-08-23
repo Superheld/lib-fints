@@ -1066,3 +1066,77 @@ describe('CamtParser', () => {
 		expect(transaction.textKeyExtension).toBeUndefined();
 	});
 });
+
+describe('CamtParser — purpose code and ultimate party', () => {
+	/**
+	 * Both are classifications the bank already made and that CAMT states outright. Without
+	 * them the same information has to be guessed from the remittance text — and where a
+	 * payment service provider sits in between, the merchant behind it cannot be guessed at
+	 * all: the direct counterparty is the provider.
+	 */
+	const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">
+  <BkToCstmrAcctRpt>
+    <GrpHdr><MsgId>m1</MsgId><CreDtTm>2026-08-11T10:00:00+02:00</CreDtTm></GrpHdr>
+    <Rpt>
+      <Id>r1</Id>
+      <CreDtTm>2026-08-11T10:00:00+02:00</CreDtTm>
+      <Acct><Id><IBAN>DE02100100100006820101</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>PRCD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-08-10</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">955.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-08-11</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="EUR">45.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <BookgDt><Dt>2026-08-11</Dt></BookgDt>
+        <ValDt><Dt>2026-08-11</Dt></ValDt>
+        <NtryDtls><TxDtls>
+          <RltdPties>
+            <Cdtr><Nm>Zahlungsdienstleister</Nm></Cdtr>
+            <UltmtCdtr><Nm>Buchhandlung Talmberg</Nm></UltmtCdtr>
+          </RltdPties>
+          <Purp><Cd>SALA</Cd></Purp>
+          <RmtInf><Ustrd>Bestellung</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+    </Rpt>
+  </BkToCstmrAcctRpt>
+</Document>`;
+
+	it('reads the purpose code and the party behind the direct one', () => {
+		const transaction = new CamtParser(xml).parse()[0].transactions[0];
+
+		expect(transaction.purposeCode).toBe('SALA');
+		// The direct counterparty stays what it is — the ultimate party is stated ALONGSIDE
+		// it, so both remain available.
+		expect(transaction.remoteName).toBe('Zahlungsdienstleister');
+		expect(transaction.ultimateParty).toBe('Buchhandlung Talmberg');
+	});
+
+	it('leaves both empty when the bank states neither', () => {
+		const ohne = xml
+			.replace('<UltmtCdtr><Nm>Buchhandlung Talmberg</Nm></UltmtCdtr>', '')
+			.replace('<Purp><Cd>SALA</Cd></Purp>', '');
+		const transaction = new CamtParser(ohne).parse()[0].transactions[0];
+
+		expect(transaction.purposeCode).toBe('');
+		expect(transaction.ultimateParty).toBe('');
+		expect(transaction.remoteName).toBe('Zahlungsdienstleister');
+	});
+
+	/**
+	 * Some institutes state their own code instead of the structured one. Reading only
+	 * `Purp.Cd` would silently drop it.
+	 */
+	it('falls back to a proprietary purpose code', () => {
+		const prtry = xml.replace('<Purp><Cd>SALA</Cd></Purp>', '<Purp><Prtry>EIGEN01</Prtry></Purp>');
+		expect(new CamtParser(prtry).parse()[0].transactions[0].purposeCode).toBe('EIGEN01');
+	});
+});

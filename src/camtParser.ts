@@ -512,6 +512,7 @@ export class CamtParser {
 			let remoteName = '';
 			let remoteIBAN = '';
 			let remoteBankId = '';
+			let ultimateParty = '';
 
 			const txDtls = entry.NtryDtls?.TxDtls;
 			if (txDtls) {
@@ -520,13 +521,27 @@ export class CamtParser {
 					remoteName = this.extractPartyName(txDtls, 'RltdPties.Cdtr');
 					remoteIBAN = this.getValueFromPath(txDtls, 'RltdPties.CdtrAcct.Id.IBAN') || '';
 					remoteBankId = this.extractBankId(txDtls, 'RltdAgts.CdtrAgt.FinInstnId');
+					// The party the money is ultimately for. Where a payment service provider
+					// sits in between, the creditor above is the provider and this is the
+					// merchant behind it.
+					ultimateParty = this.extractPartyName(txDtls, 'RltdPties.UltmtCdtr');
 				} else {
 					// For credit transactions, we want the debtor (sending party)
 					remoteName = this.extractPartyName(txDtls, 'RltdPties.Dbtr');
 					remoteIBAN = this.getValueFromPath(txDtls, 'RltdPties.DbtrAcct.Id.IBAN') || '';
 					remoteBankId = this.extractBankId(txDtls, 'RltdAgts.DbtrAgt.FinInstnId');
+					ultimateParty = this.extractPartyName(txDtls, 'RltdPties.UltmtDbtr');
 				}
 			}
+
+			// SEPA purpose code (SALA, RENT, LOAN, …) — a classification the bank already
+			// made. It sits at transaction level; some institutes state it structured
+			// (`Purp.Cd`), others as their own text (`Purp.Prtry`).
+			const purposeCode = txDtls
+				? this.getValueFromPath(txDtls, 'Purp.Cd') ||
+					this.getValueFromPath(txDtls, 'Purp.Prtry') ||
+					''
+				: '';
 
 			// Extract bank transaction code structure (BkTxCd) - can be at entry level or TxDtls level
 			let bkTxCd = this.parseBankTransactionCode(entry);
@@ -551,6 +566,12 @@ export class CamtParser {
 				mandateReference: mandateId,
 				additionalInformation: additionalEntryInfo,
 				bookingText: additionalEntryInfo,
+				// Stated separately from `remoteAccountNumber` so a caller can tell an IBAN
+				// from whatever the format happened to offer — MT940 puts the legacy account
+				// number in that field.
+				remoteIban: remoteIBAN,
+				purposeCode,
+				ultimateParty,
 			};
 		} catch (error) {
 			throw new CamtParsingError(

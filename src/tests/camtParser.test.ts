@@ -1081,7 +1081,7 @@ describe('CamtParser — purpose code and ultimate party', () => {
     <Rpt>
       <Id>r1</Id>
       <CreDtTm>2026-08-11T10:00:00+02:00</CreDtTm>
-      <Acct><Id><IBAN>DE02100100100006820101</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Acct><Id><IBAN>DE04999999980000000003</IBAN></Id><Ccy>EUR</Ccy></Acct>
       <Bal>
         <Tp><CdOrPrtry><Cd>PRCD</Cd></CdOrPrtry></Tp>
         <Amt Ccy="EUR">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd>

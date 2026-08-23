@@ -114,12 +114,12 @@ describe('remote IBAN (subfield ?38)', () => {
 			':60F:C021101EUR2187,95\r\n' +
 			':61:0211011102DR800,NSTONONREF//55555\r\n' +
 			':86:008?00DAUERAUFTRAG?20Miete?3010020030?31234567\r\n' +
-			'?32MUELLER?38DE02100100100006820101\r\n' +
+			'?32MUELLER?38DE04999999980000000003\r\n' +
 			':62F:C021131EUR1387,95\r\n';
 
 		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
 
-		expect(transaction.remoteIban).toBe('DE02100100100006820101');
+		expect(transaction.remoteIban).toBe('DE04999999980000000003');
 		// The legacy fields stay where they were — the IBAN is stated ALONGSIDE them, not
 		// instead of them, and a caller may well want either.
 		expect(transaction.remoteBankId).toBe('10020030');

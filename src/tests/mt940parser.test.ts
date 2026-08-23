@@ -59,3 +59,46 @@ describe('parse', () => {
 		expect(statement.transactions[1].additionalInformation).toBe('Additional Information');
 	});
 });
+
+describe('remote IBAN (subfield ?38)', () => {
+	/**
+	 * Without ?38, MT940 only ever offers ?30/?31 — bank code and legacy account number —
+	 * while CAMT states the IBAN outright. The same booking then looks different depending
+	 * on how the statement was fetched, and nothing about it reads as an error.
+	 */
+	it('reads the remote IBAN when the bank states it', () => {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			':60F:C021101EUR2187,95\r\n' +
+			':61:0211011102DR800,NSTONONREF//55555\r\n' +
+			':86:008?00DAUERAUFTRAG?20Miete?3010020030?31234567\r\n' +
+			'?32MUELLER?38DE02100100100006820101\r\n' +
+			':62F:C021131EUR1387,95\r\n';
+
+		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
+
+		expect(transaction.remoteIban).toBe('DE02100100100006820101');
+		// The legacy fields stay where they were — the IBAN is stated ALONGSIDE them, not
+		// instead of them, and a caller may well want either.
+		expect(transaction.remoteBankId).toBe('10020030');
+		expect(transaction.remoteAccountNumber).toBe('234567');
+	});
+
+	it('leaves the IBAN unset when the bank omits the subfield', () => {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			':60F:C021101EUR2187,95\r\n' +
+			':61:0211011102DR800,NSTONONREF//55555\r\n' +
+			':86:008?00DAUERAUFTRAG?20Miete?3010020030?31234567?32MUELLER\r\n' +
+			':62F:C021131EUR1387,95\r\n';
+
+		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
+
+		expect(transaction.remoteIban).toBeUndefined();
+		expect(transaction.remoteBankId).toBe('10020030');
+	});
+});

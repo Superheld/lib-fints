@@ -271,6 +271,15 @@ export class Mt940Parser {
 							true,
 						);
 						break;
+					// The remote IBAN. Without it, MT940 offers only ?30/?31 — bank code and
+					// legacy account number — while CAMT states the IBAN outright, so the same
+					// booking looks different depending on how it was fetched.
+					case '?38':
+						this.currentTransaction.remoteIban = subFieldTokenizer.parseNextToken(
+							TokenType.TextToNextSubTag,
+							true,
+						);
+						break;
 					default:
 						subFieldTokenizer.parseNextToken(TokenType.TextToNextSubTag, false);
 						break;

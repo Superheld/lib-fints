@@ -48,6 +48,7 @@ export class BalanceInteraction extends CustomerOrderInteraction {
 	handleResponse(response: Message, clientResponse: AccountBalanceResponse) {
 		const hisal = response.findSegment<HISALSegment>(HISAL.Id);
 		if (hisal) {
+			const account = hisal.account;
 			clientResponse.balance = {
 				date: hisal.balance.date,
 				currency: hisal.currency,
@@ -55,6 +56,12 @@ export class BalanceInteraction extends CustomerOrderInteraction {
 				notedBalance: hisal.notedBalance ? balanceToValue(hisal.notedBalance) : undefined,
 				creditLimit: hisal.creditLimit?.value,
 				availableAmount: hisal.availableAmount?.value,
+				product: hisal.product,
+				account: {
+					iban: 'iban' in account ? account.iban : undefined,
+					accountNumber: account.accountNumber,
+					subAccountId: account.subAccountId,
+				},
 			};
 		}
 	}

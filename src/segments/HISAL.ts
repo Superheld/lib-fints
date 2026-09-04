@@ -1,16 +1,19 @@
 import { AlphaNumeric } from '../dataElements/AlphaNumeric.js';
 import { Currency } from '../dataElements/Currency.js';
 import { Dat } from '../dataElements/Dat.js';
-import { AccountGroup } from '../dataGroups/Account.js';
+import { type Account, AccountGroup } from '../dataGroups/Account.js';
 import { type Balance, BalanceGroup } from '../dataGroups/Balance.js';
-import { InternationalAccountGroup } from '../dataGroups/InternationalAccount.js';
+import {
+	type InternationalAccount,
+	InternationalAccountGroup,
+} from '../dataGroups/InternationalAccount.js';
 import { type Money, MoneyGroup } from '../dataGroups/Money.js';
 import { type TimeStamp, TimeStampGroup } from '../dataGroups/TimeStamp.js';
 import type { Segment } from '../segment.js';
 import { SegmentDefinition } from '../segmentDefinition.js';
 
 export type HISALSegment = Segment & {
-	account: InternationalAccountGroup | AccountGroup;
+	account: InternationalAccount | Account;
 	product: string;
 	currency: string;
 	balance: Balance;

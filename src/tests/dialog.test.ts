@@ -172,6 +172,58 @@ describe('Dialog', () => {
 			expect(dialog.hasEnded).toBe(true);
 		});
 
+		it('ends the dialog when the bank refuses an order', async () => {
+			// The dialog is open at the bank once the initialisation went through. A
+			// refused order used to leave it open: the loop stopped, HKEND never went out.
+			const sepaInteraction = new SepaAccountInteraction();
+			vi.spyOn(sepaInteraction, 'handleClientResponse').mockReturnValue({
+				dialogId: 'MOCK_DIALOG_123',
+				success: false,
+				requiresTan: false,
+				bankAnswers: [{ code: 9010, text: 'Auftrag abgelehnt' }],
+			} as ClientResponse);
+			dialog.addCustomerInteraction(sepaInteraction);
+
+			const responses = await dialog.start();
+
+			// init, the refused order, HKEND
+			expect(httpClientSendMessageMock).toHaveBeenCalledTimes(3);
+			expect(responses.get('HKSPA')?.success).toBe(false);
+			expect(responses.get('HKEND')?.success).toBe(true);
+			expect(dialog.hasEnded).toBe(true);
+		});
+
+		it('does not send HKEND when the initialisation itself fails', async () => {
+			vi.spyOn(dialog.currentInteraction, 'handleClientResponse').mockReturnValue({
+				dialogId: '0',
+				success: false,
+				requiresTan: false,
+				bankAnswers: [{ code: 9942, text: 'PIN falsch' }],
+			} as ClientResponse);
+
+			await dialog.start();
+
+			expect(httpClientSendMessageMock).toHaveBeenCalledTimes(1);
+			expect(dialog.hasEnded).toBe(false);
+		});
+
+		it('ends the dialog before rethrowing when handling a response throws', async () => {
+			// A statement the parser cannot read, say. The exception is the caller's to
+			// handle; the dialog left open at the bank is not.
+			const sepaInteraction = new SepaAccountInteraction();
+			vi.spyOn(sepaInteraction, 'handleClientResponse').mockImplementation(() => {
+				throw new SyntaxError('Expected Decimal token');
+			});
+			dialog.addCustomerInteraction(sepaInteraction);
+
+			await expect(dialog.start()).rejects.toThrow('Expected Decimal token');
+
+			// init, the order that threw, HKEND
+			expect(httpClientSendMessageMock).toHaveBeenCalledTimes(3);
+			expect(dialog.hasEnded).toBe(true);
+			expect(dialog.responses.get('HKEND')?.success).toBe(true);
+		});
+
 		it('throws error when dialog is already initialized', async () => {
 			dialog.isInitialized = true;
 

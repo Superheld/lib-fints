@@ -302,6 +302,13 @@ export class Mt940Parser {
 		this.parsePurpose(this.currentTransaction);
 	}
 
+	/**
+	 * Splits the SEPA tags (`EREF+`, `SVWZ+`, …) out of the purpose text.
+	 *
+	 * Text before the first tag, or between two, is skipped up to the next one. The loop
+	 * used to stop at the first thing that was not a tag — so a purpose that opened with
+	 * a plain word, as many do, kept all its tags as text and yielded not one reference.
+	 */
 	parsePurpose(transaction: Transaction) {
 		const purposeTokenizer = new Mt940Tokenizer(transaction.purpose ?? '');
 
@@ -339,7 +346,7 @@ export class Mt940Parser {
 						break;
 				}
 			} else {
-				break;
+				purposeTokenizer.parseNextToken(TokenType.TextToNextPurposeTag, false);
 			}
 			purposeTokenizer.parseNextToken(TokenType.WhiteSpace, false);
 		} while (!purposeTokenizer.isAtEnd());

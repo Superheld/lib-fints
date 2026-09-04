@@ -149,9 +149,24 @@ export class InitDialogInteraction extends CustomerInteraction {
 					paramSegments.forEach((paramSegment) => {
 						if (paramSegment) {
 							transaction.versions.push(paramSegment.header.version);
-							transaction.params = paramSegment.params;
 						}
 					});
+
+					// The parameters of the version this client will send. A bank offering
+					// several versions sends a parameter segment for each; taking whichever
+					// came last — as this once did — made the choice depend on the order in the
+					// message. A segment newer than this client knows is decoded as unknown,
+					// so the highest one here is the highest one the client supports.
+					const inUse = paramSegments.reduce<
+						BusinessTransactionParameterSegment<unknown> | undefined
+					>(
+						(best, candidate) =>
+							!best || candidate.header.version > best.header.version ? candidate : best,
+						undefined,
+					);
+					if (inUse) {
+						transaction.params = inUse.params;
+					}
 
 					unknownParamSegments.forEach((paramSegment) => {
 						if (paramSegment) {

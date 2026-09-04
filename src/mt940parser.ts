@@ -107,10 +107,17 @@ export class Mt940Parser {
 							true,
 						);
 						break;
+					// F for the final balance of a statement, M for the intermediate one that
+					// opens or closes a page of a statement spread over several (`:28C:1/2`).
+					// Each page is its own Statement here, so to it the intermediate balance
+					// IS the opening or closing balance. Without the M cases those pages came
+					// back with both balances undefined — and a type that promised otherwise.
 					case ':60F:':
+					case ':60M:':
 						this.currentStatement.openingBalance = this.parseBalance();
 						break;
 					case ':62F:':
+					case ':62M:':
 						this.currentStatement.closingBalance = this.parseBalance();
 						break;
 					case ':64:':

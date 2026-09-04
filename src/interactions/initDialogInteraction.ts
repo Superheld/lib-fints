@@ -171,6 +171,10 @@ export class InitDialogInteraction extends CustomerInteraction {
 					unknownParamSegments.forEach((paramSegment) => {
 						if (paramSegment) {
 							transaction.versions.push(paramSegment.header.version);
+							transaction.unparsedParameters = [
+								...(transaction.unparsedParameters ?? []),
+								{ version: paramSegment.header.version, data: paramSegment.rawData },
+							];
 						}
 					});
 				}

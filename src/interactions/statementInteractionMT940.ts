@@ -51,16 +51,13 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 			.filter((booked) => !!booked)
 			.join('');
 
-		if (bookedTransactions) {
-			try {
-				const parser = new Mt940Parser(bookedTransactions);
-				clientResponse.statements = parser.parse();
-			} catch (error) {
-				console.warn('MT940 parsing failed:', error);
-				clientResponse.statements = [];
-			}
-		} else {
-			clientResponse.statements = [];
-		}
+		// A parse error propagates. Catching it and answering with an empty list — as
+		// this once did — turned a broken statement into "success, no transactions":
+		// a caller fetching incrementally moved on, and the bookings were gone with
+		// nothing but a console warning to show for it. One bad line in one of twenty
+		// statements takes the whole stream down, so the caller has to hear about it.
+		clientResponse.statements = bookedTransactions
+			? new Mt940Parser(bookedTransactions).parse()
+			: [];
 	}
 }

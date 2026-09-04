@@ -396,9 +396,21 @@ export class CamtParser {
 				const creditDebitInd = this.getValueFromPath(balanceObj, 'CdtDbtInd');
 				const finalValue = creditDebitInd === 'DBIT' ? -value : value;
 
+				// `DtTm` as well as `Dt`: some banks state a balance date as a date-time.
+				// Entries were read that way already; balances were not, and a balance
+				// with a `DtTm` was silently dated today.
 				const dateStr =
-					this.getValueFromPath(balanceObj, 'Dt.Dt') || this.getValueFromPath(balanceObj, 'Dt');
-				const date = dateStr ? this.parseDate(dateStr) : new Date();
+					this.getValueFromPath(balanceObj, 'Dt.DtTm') ||
+					this.getValueFromPath(balanceObj, 'Dt.Dt') ||
+					this.getValueFromPath(balanceObj, 'Dt');
+				if (!dateStr) {
+					// Not today's date, which this once put here: a balance is a figure AT a
+					// date, and one without is a figure without meaning.
+					throw new CamtParsingError(
+						`Balance of type ${typeCode ?? '(unknown)'} in report ${reportNumber} has no date`,
+					);
+				}
+				const date = this.parseDate(dateStr);
 
 				const balance: Balance = {
 					date,
@@ -496,7 +508,17 @@ export class CamtParser {
 				this.getValueFromPath(entry, 'ValDt.Dt') ||
 				this.getValueFromPath(entry, 'ValDt');
 
-			const entryDate = bookingDate ? this.parseDate(bookingDate) : new Date();
+			// Both are optional in camt.052, and an entry the bank has not booked yet — a
+			// pending one — commonly has no booking date. Each stands in for the other;
+			// neither is invented. This once put today's date in for a missing booking
+			// date, which gave every pending entry the day it was fetched as the day it
+			// was booked.
+			if (!bookingDate && !valueDate) {
+				throw new CamtParsingError(
+					`Entry ${this.accountServicerRefOf(entry)} has neither a booking nor a value date`,
+				);
+			}
+			const entryDate = this.parseDate(bookingDate ?? (valueDate as string));
 			const parsedValueDate = valueDate ? this.parseDate(valueDate) : entryDate;
 
 			// Extract references
@@ -689,6 +711,10 @@ export class CamtParser {
 		}
 
 		return new Date(dateStr);
+	}
+
+	private accountServicerRefOf(entry: CamtEntry): string {
+		return this.getValueFromPath(entry, 'AcctSvcrRef') ?? '(no AcctSvcrRef)';
 	}
 
 	private parseBankTransactionCode(entry: CamtEntry | CamtTransactionDetails): {

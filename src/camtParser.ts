@@ -279,43 +279,18 @@ export class CamtParser {
 			// Parse balances
 			const balances = this.parseBalances(report, reportNumber);
 
-			// Be more flexible with balance requirements - some banks only provide one balance
-			let openingBalance = balances.openingBalance;
-			let closingBalance = balances.closingBalance;
-
-			// If we don't have both opening and closing, try to use what we have
-			if (!openingBalance && !closingBalance) {
-				// If we have available balance, use it as closing balance
-				if (balances.availableBalance) {
-					closingBalance = balances.availableBalance;
-				} else {
-					throw new CamtParsingError(`No balance information found in CAMT report ${reportNumber}`);
-				}
-			}
-
-			// If missing opening balance, create a zero balance for the same date as closing
-			if (!openingBalance && closingBalance) {
-				openingBalance = {
-					date: closingBalance.date,
-					currency: closingBalance.currency,
-					value: 0,
-				};
-			}
-
-			// If missing closing balance, use opening balance as closing
-			if (!closingBalance && openingBalance) {
-				closingBalance = openingBalance;
-			}
+			// What the bank sent, and nothing in place of what it did not. This once made
+			// up an opening balance of zero where the report had none, and passed the
+			// opening balance off as the closing one where that was missing — figures a
+			// caller checking opening + entries = closing took for a discrepancy. A
+			// camt.052 report is an intraday report and need not carry either.
+			const { openingBalance, closingBalance, availableBalance } = this.parseBalances(
+				report,
+				reportNumber,
+			);
 
 			// Parse transactions
 			const transactions = this.parseTransactions(report, reportNumber);
-
-			// At this point we should have both balances, otherwise throw an error
-			if (!openingBalance || !closingBalance) {
-				throw new CamtParsingError(
-					`Unable to determine required balances for CAMT report ${reportNumber}`,
-				);
-			}
 
 			return {
 				account,
@@ -323,7 +298,7 @@ export class CamtParser {
 				transactionReference,
 				openingBalance,
 				closingBalance,
-				availableBalance: balances.availableBalance,
+				availableBalance,
 				transactions,
 			};
 		} catch (error) {
@@ -429,23 +404,28 @@ export class CamtParser {
 						closingBalance = balance;
 						break;
 					case 'ITBD': // Interim booked
-					case 'ITAV': // Interim available
-					case 'FWAV': // Forward available
 					case 'BOOK': // Booked balance
-						// Use as available balance, or as closing if we don't have one
+						// An intraday report closes with an interim booked balance rather
+						// than a closing one; where there is no CLBD, this is the closing
+						// balance of the report. It is also the nearest thing to an
+						// available balance such a report offers.
 						if (!availableBalance) {
 							availableBalance = balance;
 						}
-						// If we don't have a closing balance, use this as closing
-						if (!closingBalance && (typeCode === 'BOOK' || typeCode === 'ITBD')) {
-							closingBalance = balance;
-						}
-						break;
-					default:
-						// Handle unknown balance types by using them as closing balance if we don't have one
 						if (!closingBalance) {
 							closingBalance = balance;
 						}
+						break;
+					case 'ITAV': // Interim available
+					case 'FWAV': // Forward available
+						if (!availableBalance) {
+							availableBalance = balance;
+						}
+						break;
+					default:
+						// A type this parser does not know says nothing about which balance it
+						// is; it used to be taken for the closing one. Left out rather than
+						// guessed.
 						break;
 				}
 			}

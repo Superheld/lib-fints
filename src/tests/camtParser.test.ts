@@ -124,20 +124,20 @@ describe('CamtParser', () => {
 
 		// Check balances with all fields
 		expect(statement.openingBalance).toBeDefined();
-		expect(statement.openingBalance.value).toBe(1000.0);
-		expect(statement.openingBalance.currency).toBe('EUR');
-		expect(statement.openingBalance.date).toBeInstanceOf(Date);
-		expect(statement.openingBalance.date.getFullYear()).toBe(2013);
-		expect(statement.openingBalance.date.getMonth()).toBe(9); // October (0-based)
-		expect(statement.openingBalance.date.getDate()).toBe(31);
+		expect(statement.openingBalance?.value).toBe(1000.0);
+		expect(statement.openingBalance?.currency).toBe('EUR');
+		expect(statement.openingBalance?.date).toBeInstanceOf(Date);
+		expect(statement.openingBalance?.date.getFullYear()).toBe(2013);
+		expect(statement.openingBalance?.date.getMonth()).toBe(9); // October (0-based)
+		expect(statement.openingBalance?.date.getDate()).toBe(31);
 
 		expect(statement.closingBalance).toBeDefined();
-		expect(statement.closingBalance.value).toBe(1500.0);
-		expect(statement.closingBalance.currency).toBe('EUR');
-		expect(statement.closingBalance.date).toBeInstanceOf(Date);
-		expect(statement.closingBalance.date.getFullYear()).toBe(2013);
-		expect(statement.closingBalance.date.getMonth()).toBe(10); // November (0-based)
-		expect(statement.closingBalance.date.getDate()).toBe(4);
+		expect(statement.closingBalance?.value).toBe(1500.0);
+		expect(statement.closingBalance?.currency).toBe('EUR');
+		expect(statement.closingBalance?.date).toBeInstanceOf(Date);
+		expect(statement.closingBalance?.date.getFullYear()).toBe(2013);
+		expect(statement.closingBalance?.date.getMonth()).toBe(10); // November (0-based)
+		expect(statement.closingBalance?.date.getDate()).toBe(4);
 
 		// Check transactions
 		expect(statement.transactions).toHaveLength(1);
@@ -477,19 +477,19 @@ describe('CamtParser', () => {
 
 		// Test opening balance with exact date parsing
 		expect(statement.openingBalance).toBeDefined();
-		expect(statement.openingBalance.value).toBe(5000.5);
-		expect(statement.openingBalance.currency).toBe('EUR');
-		expect(statement.openingBalance.date.getFullYear()).toBe(2023);
-		expect(statement.openingBalance.date.getMonth()).toBe(11); // December (0-based)
-		expect(statement.openingBalance.date.getDate()).toBe(21);
+		expect(statement.openingBalance?.value).toBe(5000.5);
+		expect(statement.openingBalance?.currency).toBe('EUR');
+		expect(statement.openingBalance?.date.getFullYear()).toBe(2023);
+		expect(statement.openingBalance?.date.getMonth()).toBe(11); // December (0-based)
+		expect(statement.openingBalance?.date.getDate()).toBe(21);
 
 		// Test closing balance
 		expect(statement.closingBalance).toBeDefined();
-		expect(statement.closingBalance.value).toBe(4750.75);
-		expect(statement.closingBalance.currency).toBe('EUR');
-		expect(statement.closingBalance.date.getFullYear()).toBe(2023);
-		expect(statement.closingBalance.date.getMonth()).toBe(11); // December (0-based)
-		expect(statement.closingBalance.date.getDate()).toBe(22);
+		expect(statement.closingBalance?.value).toBe(4750.75);
+		expect(statement.closingBalance?.currency).toBe('EUR');
+		expect(statement.closingBalance?.date.getFullYear()).toBe(2023);
+		expect(statement.closingBalance?.date.getMonth()).toBe(11); // December (0-based)
+		expect(statement.closingBalance?.date.getDate()).toBe(22);
 
 		// Test available balance (ITBD)
 		expect(statement.availableBalance).toBeDefined();
@@ -598,15 +598,15 @@ describe('CamtParser', () => {
 		const statement = statements[0];
 
 		// Test edge case balances
-		expect(statement.openingBalance.value).toBe(-0.01); // Negative due to DBIT indicator
-		expect(statement.openingBalance.currency).toBe('USD');
-		expect(statement.closingBalance.value).toBe(999.99);
-		expect(statement.closingBalance.currency).toBe('USD');
+		expect(statement.openingBalance?.value).toBe(-0.01); // Negative due to DBIT indicator
+		expect(statement.openingBalance?.currency).toBe('USD');
+		expect(statement.closingBalance?.value).toBe(999.99);
+		expect(statement.closingBalance?.currency).toBe('USD');
 
 		// Test date parsing from YYYYMMDD format
-		expect(statement.openingBalance.date.getFullYear()).toBe(2023);
-		expect(statement.openingBalance.date.getMonth()).toBe(11); // December
-		expect(statement.openingBalance.date.getDate()).toBe(22);
+		expect(statement.openingBalance?.date.getFullYear()).toBe(2023);
+		expect(statement.openingBalance?.date.getMonth()).toBe(11); // December
+		expect(statement.openingBalance?.date.getDate()).toBe(22);
 
 		// Test transaction with mostly empty/missing fields
 		expect(statement.transactions).toHaveLength(1);
@@ -1177,12 +1177,60 @@ describe('CamtParser — dates the bank did not send', () => {
 				entry('<BookgDt><Dt>2026-01-22</Dt></BookgDt>'),
 			),
 		).parse();
-		expect(statement.closingBalance.date).toEqual(new Date('2026-01-22T00:00:00.000+01:00'));
+		expect(statement.closingBalance?.date).toEqual(new Date('2026-01-22T00:00:00.000+01:00'));
 	});
 
 	it('refuses a balance without a date', () => {
 		expect(() =>
 			new CamtParser(report(closing(''), entry('<BookgDt><Dt>2026-07-01</Dt></BookgDt>'))).parse(),
 		).toThrow(/Balance of type CLBD in report 1 has no date/);
+	});
+});
+
+describe('CamtParser — balances the bank did not send', () => {
+	const report = (...balances: string[]) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`${balances.join('')}<Ntry><Amt>10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd>` +
+		`<BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry></Rpt></BkToCstmrAcctRpt></Document>`;
+	const balance = (type: string, amount: string) =>
+		`<Bal><Tp><CdOrPrtry><Cd>${type}</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">${amount}</Amt>` +
+		`<CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-07-01</Dt></Dt></Bal>`;
+
+	it('leaves the opening balance absent instead of making up a zero', () => {
+		const [statement] = new CamtParser(report(balance('CLBD', '990.00'))).parse();
+		expect(statement.openingBalance).toBeUndefined();
+		expect(statement.closingBalance?.value).toBe(990);
+	});
+
+	it('leaves the closing balance absent instead of repeating the opening one', () => {
+		const [statement] = new CamtParser(report(balance('OPBD', '1000.00'))).parse();
+		expect(statement.openingBalance?.value).toBe(1000);
+		expect(statement.closingBalance).toBeUndefined();
+	});
+
+	it('takes an interim booked balance as the closing one of an intraday report', () => {
+		const [statement] = new CamtParser(
+			report(balance('OPBD', '1000.00'), balance('ITBD', '990.00')),
+		).parse();
+		expect(statement.closingBalance?.value).toBe(990);
+	});
+
+	it('keeps an available balance as such, not as a closing balance', () => {
+		const [statement] = new CamtParser(report(balance('ITAV', '950.00'))).parse();
+		expect(statement.closingBalance).toBeUndefined();
+		expect(statement.availableBalance?.value).toBe(950);
+	});
+
+	it('does not take a balance of an unknown type for the closing one', () => {
+		const [statement] = new CamtParser(report(balance('XPCD', '1.00'))).parse();
+		expect(statement.closingBalance).toBeUndefined();
+	});
+
+	it('parses a report without any balance', () => {
+		const [statement] = new CamtParser(report()).parse();
+		expect(statement.openingBalance).toBeUndefined();
+		expect(statement.closingBalance).toBeUndefined();
+		expect(statement.transactions).toHaveLength(1);
 	});
 });

@@ -43,10 +43,14 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 		// A response the bank spread over several messages arrives as several HIKAZ
 		// segments. Unlike CAMT these carry one continuous MT940 stream, so their
 		// payloads are joined rather than listed.
-		const bookedTransactions = response
-			.findAllSegments<HIKAZSegment>(HIKAZ.Id)
+		const segments = response.findAllSegments<HIKAZSegment>(HIKAZ.Id);
+		const bookedTransactions = segments
 			.map((segment) => segment.bookedTransactions)
 			.filter((booked) => !!booked)
+			.join('');
+		const notedTransactions = segments
+			.map((segment) => segment.notedTransactions)
+			.filter((noted) => !!noted)
 			.join('');
 
 		// A parse error propagates. Catching it and answering with an empty list — as
@@ -57,5 +61,10 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 		clientResponse.statements = bookedTransactions
 			? new Mt940Parser(bookedTransactions).parse()
 			: [];
+
+		// The second field of HIKAZ, sent alongside the first and until now never read.
+		if (notedTransactions) {
+			clientResponse.notedStatements = new Mt940Parser(notedTransactions).parse();
+		}
 	}
 }

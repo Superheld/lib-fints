@@ -42,7 +42,16 @@ export interface ClientResponse {
  * which would read as "no transactions in this period".
  */
 export interface StatementResponse extends ClientResponse {
+	/** The booked transactions, as statements. */
 	statements?: Statement[];
+	/**
+	 * The transactions the bank has noted but not booked yet — pending ones — where
+	 * the bank sends them. Kept apart from `statements`: a caller that counts these
+	 * as booked overstates the balance, and the bank may still drop or change them.
+	 * Absent when the bank sent none; not every bank does, and MT940 rarely carries
+	 * them.
+	 */
+	notedStatements?: Statement[];
 }
 
 export abstract class CustomerInteraction {

@@ -218,7 +218,7 @@ describe('ElectronicStatementInteraction', () => {
 		const response = handle(messageWith(hiekaText(pdf)));
 
 		expect(response.statements).toHaveLength(1);
-		const statement = response.statements[0];
+		const [statement] = response.statements ?? [];
 		expect(statement.format).toBe(StatementFormat.PDF);
 		expect(statement.year).toBe(2026);
 		expect(statement.number).toBe(7);
@@ -241,12 +241,16 @@ describe('ElectronicStatementInteraction', () => {
 
 	it('unwraps a base64 wrapped document, but only when it proves to be one', () => {
 		const wrapped = Buffer.from(pdf, 'latin1').toString('base64');
-		const unwrapped = handle(messageWith(hiekaText(wrapped))).statements[0].document;
+		const [unwrapped] = (handle(messageWith(hiekaText(wrapped))).statements ?? []).map(
+			(s) => s.document,
+		);
 		expect(Buffer.from(unwrapped).toString('latin1')).toBe(pdf);
 
 		// Base64-looking text that does NOT decode to a document must survive untouched.
 		const notADocument = 'SGVsbG8gV29ybGQ=';
-		const kept = handle(messageWith(hiekaText(notADocument))).statements[0].document;
+		const [kept] = (handle(messageWith(hiekaText(notADocument))).statements ?? []).map(
+			(s) => s.document,
+		);
 		expect(Buffer.from(kept).toString('latin1')).toBe(notADocument);
 	});
 });

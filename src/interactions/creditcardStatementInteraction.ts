@@ -8,9 +8,10 @@ import { DIKKU, type DIKKUSegment } from '../segments/DIKKU.js';
 import { DKKKU, type DKKKUSegment } from '../segments/DKKKU.js';
 import { type ClientResponse, CustomerOrderInteraction } from './customerInteraction.js';
 
+/** Payload fields are absent when the order did not go through — `success` false or `requiresTan` true. */
 export interface CreditCardStatementResponse extends ClientResponse {
-	balance: AccountBalance;
-	statements: CreditCardStatement[];
+	balance?: AccountBalance;
+	statements?: CreditCardStatement[];
 }
 
 export class CreditCardStatementInteraction extends CustomerOrderInteraction {

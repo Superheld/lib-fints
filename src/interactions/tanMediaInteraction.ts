@@ -6,8 +6,9 @@ import { HITAB, type HITABSegment } from '../segments/HITAB.js';
 import { HKTAB, type HKTABSegment } from '../segments/HKTAB.js';
 import { type ClientResponse, CustomerOrderInteraction } from './customerInteraction.js';
 
+/** `tanMediaList` is absent when the order did not go through — `success` false or `requiresTan` true. */
 export interface TanMediaResponse extends ClientResponse {
-	tanMediaList: string[];
+	tanMediaList?: string[];
 }
 
 export class TanMediaInteraction extends CustomerOrderInteraction {
@@ -34,13 +35,14 @@ export class TanMediaInteraction extends CustomerOrderInteraction {
 	handleResponse(response: Message, clientResponse: TanMediaResponse) {
 		const hitab = response.findSegment<HITABSegment>(HITAB.Id);
 		if (hitab) {
-			clientResponse.tanMediaList = (hitab.mediaList ?? [])
+			const tanMediaList = (hitab.mediaList ?? [])
 				.map((media) => media.name)
 				.filter((name) => name) as string[];
+			clientResponse.tanMediaList = tanMediaList;
 
 			const tanMethod = this.dialog?.config.selectedTanMethod;
 			if (tanMethod) {
-				tanMethod.activeTanMedia = clientResponse.tanMediaList;
+				tanMethod.activeTanMedia = tanMediaList;
 			}
 		}
 	}

@@ -35,8 +35,14 @@ export interface ClientResponse {
 	tanMediaName?: string;
 }
 
+/**
+ * The payload of a response is present only when the order went through: with
+ * `success` false, or `requiresTan` true, the bank has not answered the order yet
+ * and there is nothing to parse. The field is absent then — not an empty list,
+ * which would read as "no transactions in this period".
+ */
 export interface StatementResponse extends ClientResponse {
-	statements: Statement[];
+	statements?: Statement[];
 }
 
 export abstract class CustomerInteraction {

@@ -56,35 +56,27 @@ export class StatementInteractionCAMT extends CustomerOrderInteraction {
 			.findAllSegments<HICAZSegment>(HICAZ.Id)
 			.flatMap((segment) => segment.bookedTransactions ?? []);
 
-		if (camtMessages.length > 0) {
-			try {
-				// Parse all CAMT messages (one per booking day) and combine statements
-				const allStatements: Statement[] = [];
-				for (const camtMessage of camtMessages) {
-					// The regex looks for the XML declaration `<?xml ... ?>`
-					// and checks if it contains the attribute encoding="UTF-8".
-					// The 'i' flag makes the match case-insensitive (e.g., for "utf-8").
-					const isUtf8Encoded = /<\?xml[^>]*encoding="UTF-8"[^>]*\?>/i.test(camtMessage);
+		// Parse all CAMT messages (one per booking day) and combine statements. A parse
+		// error propagates: catching it and answering with an empty list — as this once
+		// did — turned one broken document out of twenty into "success, no transactions",
+		// and a caller fetching incrementally moved on past bookings it never saw.
+		const allStatements: Statement[] = [];
+		for (const camtMessage of camtMessages) {
+			// The regex looks for the XML declaration `<?xml ... ?>`
+			// and checks if it contains the attribute encoding="UTF-8".
+			// The 'i' flag makes the match case-insensitive (e.g., for "utf-8").
+			const isUtf8Encoded = /<\?xml[^>]*encoding="UTF-8"[^>]*\?>/i.test(camtMessage);
 
-					let xmlString: string = camtMessage;
-					if (isUtf8Encoded) {
-						// camtMessage is initially encoded as 'latin1' (ISO-8859-1), but actually contains UTF-8 data.
-						// Therefore, we need to first convert it back to a buffer using 'latin1', and then decode it as 'utf8'.
-						const intermediateBuffer = Buffer.from(camtMessage, 'latin1');
-						xmlString = intermediateBuffer.toString('utf8');
-					}
-
-					const parser = new CamtParser(xmlString);
-					const statements = parser.parse();
-					allStatements.push(...statements);
-				}
-				clientResponse.statements = allStatements;
-			} catch (error) {
-				console.warn('CAMT parsing failed:', error);
-				clientResponse.statements = [];
+			let xmlString: string = camtMessage;
+			if (isUtf8Encoded) {
+				// camtMessage is initially encoded as 'latin1' (ISO-8859-1), but actually contains UTF-8 data.
+				// Therefore, we need to first convert it back to a buffer using 'latin1', and then decode it as 'utf8'.
+				const intermediateBuffer = Buffer.from(camtMessage, 'latin1');
+				xmlString = intermediateBuffer.toString('utf8');
 			}
-		} else {
-			clientResponse.statements = [];
+
+			allStatements.push(...new CamtParser(xmlString).parse());
 		}
+		clientResponse.statements = allStatements;
 	}
 }

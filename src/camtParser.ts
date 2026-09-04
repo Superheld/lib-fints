@@ -276,9 +276,6 @@ export class CamtParser {
 			// Extract transaction reference
 			const transactionReference = this.getValueFromPath(report, 'ElctrncSeqNb');
 
-			// Parse balances
-			const balances = this.parseBalances(report, reportNumber);
-
 			// What the bank sent, and nothing in place of what it did not. This once made
 			// up an opening balance of zero where the report had none, and passed the
 			// opening balance off as the closing one where that was missing — figures a

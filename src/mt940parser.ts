@@ -32,7 +32,10 @@ const tokens: { [key in TokenType]: RegExp } = {
 	StatementNumber: /^\d+\/?\d*/,
 	CustomerReference: /^[^/\r\n]+/,
 	BankReference: /^\/\/([^\r\n]+)/,
-	CreditDebit: /^C|D|RC|RD/,
+	// Grouped, so the anchor covers every alternative. As `/^C|D|RC|RD/` only `C` was
+	// anchored; a `D` anywhere in the rest of the line would have matched, and the
+	// tokenizer would have carried on from there.
+	CreditDebit: /^(?:RC|RD|C|D)/,
 	Date: /^\d{6}/,
 	ShortDate: /^\d{4}/,
 	Decimal: /^\d+,\d*/,

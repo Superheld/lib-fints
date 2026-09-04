@@ -52,3 +52,32 @@ describe('the parameters of a transaction the bank offers in several versions', 
 		expect(withNewer.params).toMatchObject({ maxDays: 180 });
 	});
 });
+
+describe('the parameter segments this client cannot decode', () => {
+	// The bank names the transaction in HIPINS and sends its parameters alongside.
+	// A transaction this client does not implement still has its parameters — the
+	// caller may be able to use them, and can at least see what the bank offers.
+	it('are kept as the bank sent them, one per version', () => {
+		const transactions = init(
+			HIBPA,
+			HIPINS,
+			"HICDES:9:1:4+1+1+1+2:14:30:J:J:urn?:iso?:std?:iso?:20022?:tech?:xsd?:pain.008.001.02'",
+		);
+		const hkcde = transactions.find((t) => t.transId === 'HKCDE') as BankTransaction;
+
+		expect(hkcde.versions).toEqual([1]);
+		expect(hkcde.params).toBeUndefined();
+		expect(hkcde.unparsedParameters).toEqual([
+			{
+				version: 1,
+				data: '1+1+1+2:14:30:J:J:urn?:iso?:std?:iso?:20022?:tech?:xsd?:pain.008.001.02',
+			},
+		]);
+	});
+
+	it('is not set for a transaction whose parameters were decoded', () => {
+		const transaction = hkkaz(init(HIBPA, HIPINS, HIKAZS_V7));
+		expect(transaction.params).toBeDefined();
+		expect(transaction.unparsedParameters).toBeUndefined();
+	});
+});

@@ -282,10 +282,14 @@ export class FinTSConfig {
 		const allowedVersions =
 			this.bankingInformation.bpd?.allowedTransactions.find((t) => t.transId === transId)
 				?.versions ?? [];
-		const maxSupportedversion =
-			allowedVersions.sort().findLast((version) => version <= definition.version) ?? undefined;
 
-		return maxSupportedversion;
+		// Numerically, and on a copy. A bare `sort()` compares as strings — `[7, 10]`
+		// becomes `[10, 7]`, and the highest version this client supports is then not
+		// the last one below its own — and it sorts in place, into the BPD a caller
+		// persists.
+		return [...allowedVersions]
+			.sort((a, b) => a - b)
+			.findLast((version) => version <= definition.version);
 	}
 
 	/**

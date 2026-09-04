@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import type { Balance, Statement, Transaction } from './statement.js';
+import type { Balance, Money, Statement, Transaction } from './statement.js';
 
 // Type definitions for CAMT XML structure
 type GenericXMLObject = Record<string, unknown>;
@@ -72,6 +72,7 @@ interface CamtEntry extends GenericXMLObject {
 	AddtlNtryInf?: string | { '#text': string };
 	BkTxCd?: CamtBankTransactionCode;
 	NtryDtls?: {
+		Btch?: GenericXMLObject;
 		TxDtls?: CamtTransactionDetails;
 	};
 }
@@ -548,6 +549,33 @@ export class CamtParser {
 				bkTxCd = this.parseBankTransactionCode(txDtls);
 			}
 
+			// Booked, pending or informational. Stated as a code element since
+			// camt.052.001.08 (`Sts/Cd`), as plain text before.
+			const status =
+				this.getValueFromPath(entry, 'Sts.Cd') ||
+				this.getValueFromPath(entry, 'Sts.Prtry') ||
+				this.getValueFromPath(entry, 'Sts') ||
+				undefined;
+
+			const reversalIndicator = this.getValueFromPath(entry, 'RvslInd');
+			const isReversal = reversalIndicator === undefined ? undefined : reversalIndicator === 'true';
+
+			// Charges, amount details and the return reason sit on the entry or on its
+			// transaction details, depending on the bank; the entry is looked at first.
+			const charges = this.parseCharges(entry) ?? (txDtls ? this.parseCharges(txDtls) : undefined);
+			const amountDetails =
+				this.parseAmountDetails(entry) ?? (txDtls ? this.parseAmountDetails(txDtls) : undefined);
+			const returnReason = txDtls ? this.parseReturnReason(txDtls) : undefined;
+			const batch = this.parseBatch(entry);
+
+			// The identifier of the other party, where the bank states one: on a direct
+			// debit the creditor identifier that goes with the mandate, on a credit
+			// whatever the debtor's bank sent. The same field MT940 fills from
+			// `CRED+` and `DEBT+`.
+			const remoteIdentifier = txDtls
+				? this.extractPartyIdentifier(txDtls, isDebit ? 'RltdPties.Cdtr' : 'RltdPties.Dbtr')
+				: '';
+
 			return {
 				valueDate: parsedValueDate,
 				entryDate,
@@ -571,6 +599,14 @@ export class CamtParser {
 				remoteIban: remoteIBAN,
 				purposeCode,
 				ultimateParty,
+				status,
+				isReversal,
+				charges,
+				originalAmount: amountDetails?.originalAmount,
+				exchangeRate: amountDetails?.exchangeRate,
+				returnReason,
+				batch,
+				remoteIdentifier: remoteIdentifier || undefined,
 			};
 		} catch (error) {
 			throw new CamtParsingError(
@@ -688,6 +724,125 @@ export class CamtParser {
 		}
 
 		return new Date(dateStr);
+	}
+
+	/**
+	 * An amount element with its currency attribute, `<Amt Ccy="EUR">12.34</Amt>`.
+	 */
+	private moneyAt(obj: GenericXMLObject, path: string): Money | undefined {
+		const text = this.getValueFromPath(obj, path);
+		if (text === undefined || text === '') {
+			return undefined;
+		}
+		const node = this.nodeAt(obj, path);
+		const currency =
+			node && typeof node === 'object' && '@Ccy' in node ? String(node['@Ccy']) : 'EUR';
+		return { value: parseFloat(text), currency };
+	}
+
+	private nodeAt(obj: GenericXMLObject, path: string): GenericXMLObject | undefined {
+		let current: unknown = obj;
+		for (const part of path.split('.')) {
+			if (current && typeof current === 'object' && part in current) {
+				current = (current as Record<string, unknown>)[part];
+			} else {
+				return undefined;
+			}
+		}
+		return current && typeof current === 'object' ? (current as GenericXMLObject) : undefined;
+	}
+
+	/**
+	 * The charges of an entry. Stated as a total since camt.052.001.08
+	 * (`TtlChrgsAndTaxAmt`), as a single amount before, and by some banks only as
+	 * records — those are summed.
+	 */
+	private parseCharges(obj: GenericXMLObject): Money | undefined {
+		const total = this.moneyAt(obj, 'Chrgs.TtlChrgsAndTaxAmt') ?? this.moneyAt(obj, 'Chrgs.Amt');
+		if (total) {
+			return total;
+		}
+		const records = this.nodeAt(obj, 'Chrgs')?.Rcrd;
+		if (!records) {
+			return undefined;
+		}
+		const amounts = (Array.isArray(records) ? records : [records])
+			.map((record) => this.moneyAt(record as GenericXMLObject, 'Amt'))
+			.filter((money): money is Money => money !== undefined);
+		if (amounts.length === 0) {
+			return undefined;
+		}
+		return {
+			value: amounts.reduce((sum, money) => sum + money.value, 0),
+			currency: amounts[0].currency,
+		};
+	}
+
+	/**
+	 * The instructed amount and the exchange rate of an entry the bank converted:
+	 * `AmtDtls/InstdAmt` is the amount in the currency it was instructed in, and the
+	 * rate is on it or on the transaction amount.
+	 */
+	private parseAmountDetails(
+		obj: GenericXMLObject,
+	): { originalAmount?: Money; exchangeRate?: number } | undefined {
+		const originalAmount = this.moneyAt(obj, 'AmtDtls.InstdAmt.Amt');
+		const rate =
+			this.getValueFromPath(obj, 'AmtDtls.InstdAmt.CcyXchg.XchgRate') ||
+			this.getValueFromPath(obj, 'AmtDtls.TxAmt.CcyXchg.XchgRate') ||
+			this.getValueFromPath(obj, 'AmtDtls.CntrValAmt.CcyXchg.XchgRate');
+		const exchangeRate = rate ? parseFloat(rate) : undefined;
+		if (!originalAmount && exchangeRate === undefined) {
+			return undefined;
+		}
+		return { originalAmount, exchangeRate };
+	}
+
+	private parseReturnReason(
+		txDtls: CamtTransactionDetails,
+	): { code?: string; text?: string } | undefined {
+		const code =
+			this.getValueFromPath(txDtls, 'RtrInf.Rsn.Cd') ||
+			this.getValueFromPath(txDtls, 'RtrInf.Rsn.Prtry');
+		const text = this.getValueFromPath(txDtls, 'RtrInf.AddtlInf');
+		if (!code && !text) {
+			return undefined;
+		}
+		return { code: code || undefined, text: text || undefined };
+	}
+
+	private parseBatch(
+		entry: CamtEntry,
+	):
+		| { messageId?: string; paymentInformationId?: string; numberOfTransactions?: number }
+		| undefined {
+		const batch = entry.NtryDtls?.Btch;
+		if (!batch) {
+			return undefined;
+		}
+		const count = this.getValueFromPath(batch, 'NbOfTxs');
+		return {
+			messageId: this.getValueFromPath(batch, 'MsgId') || undefined,
+			paymentInformationId: this.getValueFromPath(batch, 'PmtInfId') || undefined,
+			numberOfTransactions: count ? parseInt(count, 10) : undefined,
+		};
+	}
+
+	/**
+	 * A party's identifier, where the bank states one: `Id/PrvtId/Othr/Id` for a
+	 * person — which is where a creditor identifier goes — or `Id/OrgId/Othr/Id`
+	 * for an organisation. Since camt.052.001.08 the party sits under `Pty`.
+	 */
+	private extractPartyIdentifier(txDtls: CamtTransactionDetails, partyPath: string): string {
+		for (const base of [partyPath, `${partyPath}.Pty`]) {
+			const id =
+				this.getValueFromPath(txDtls, `${base}.Id.PrvtId.Othr.Id`) ||
+				this.getValueFromPath(txDtls, `${base}.Id.OrgId.Othr.Id`);
+			if (id) {
+				return id;
+			}
+		}
+		return '';
 	}
 
 	private accountServicerRefOf(entry: CamtEntry): string {

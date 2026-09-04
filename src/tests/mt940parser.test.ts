@@ -161,12 +161,12 @@ describe('a statement spread over several pages', () => {
 		const [first, second] = new Mt940Parser(pages).parse();
 
 		expect(first.number).toBe('5/1');
-		expect(first.openingBalance.value).toBe(1000);
-		expect(first.closingBalance.value).toBe(900);
-		expect(first.closingBalance.date).toEqual(new Date('2026-08-01T12:00'));
+		expect(first.openingBalance?.value).toBe(1000);
+		expect(first.closingBalance?.value).toBe(900);
+		expect(first.closingBalance?.date).toEqual(new Date('2026-08-01T12:00'));
 
 		expect(second.number).toBe('5/2');
-		expect(second.openingBalance.value).toBe(900);
-		expect(second.closingBalance.value).toBe(950);
+		expect(second.openingBalance?.value).toBe(900);
+		expect(second.closingBalance?.value).toBe(950);
 	});
 });

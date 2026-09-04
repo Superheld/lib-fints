@@ -3,9 +3,15 @@ export interface Statement {
 	relatedReference?: string;
 	account?: string;
 	number?: string;
-	openingBalance: Balance;
+	/**
+	 * Absent when the bank did not state one. MT940 always does; a CAMT intraday
+	 * report (camt.052) need not, and this library no longer makes one up — it used
+	 * to put a zero here, which a caller reconciling balances took for a difference.
+	 */
+	openingBalance?: Balance;
 	transactions: Transaction[];
-	closingBalance: Balance;
+	/** Absent when the bank did not state one; see {@link openingBalance}. */
+	closingBalance?: Balance;
 	availableBalance?: Balance;
 	forwardBalances?: Balance[];
 }

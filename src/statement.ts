@@ -64,6 +64,55 @@ export interface Transaction {
 	 * the provider, this is the merchant behind it.
 	 */
 	ultimateParty?: string;
+
+	/**
+	 * Whether the bank has booked the entry: `BOOK`, or `PDNG` for one it has only
+	 * noted so far, `INFO` for one it will not book. CAMT only (`Sts`). Entries in
+	 * `notedStatements` are pending by definition; this says so on the entry itself.
+	 */
+	status?: string;
+
+	/** Whether the entry reverses an earlier one. CAMT only (`RvslInd`). */
+	isReversal?: boolean;
+
+	/**
+	 * The charges the bank took for the entry, where it states them separately.
+	 * CAMT only (`Chrgs`).
+	 */
+	charges?: Money;
+
+	/**
+	 * The amount as instructed, before conversion — the foreign-currency amount of
+	 * an entry booked in the account's currency. CAMT only (`AmtDtls.InstdAmt`).
+	 */
+	originalAmount?: Money;
+
+	/** The exchange rate applied to {@link originalAmount}. CAMT only (`CcyXchg.XchgRate`). */
+	exchangeRate?: number;
+
+	/**
+	 * Why a payment came back — the reason code (`AC04`, `MD01`, …) and the text the
+	 * bank added. Set on a returned direct debit or transfer. CAMT only (`RtrInf`).
+	 */
+	returnReason?: {
+		code?: string;
+		text?: string;
+	};
+
+	/**
+	 * For an entry that books several payments at once: the batch they came in, and
+	 * how many. CAMT only (`NtryDtls.Btch`).
+	 */
+	batch?: {
+		messageId?: string;
+		paymentInformationId?: string;
+		numberOfTransactions?: number;
+	};
+}
+
+export interface Money {
+	value: number;
+	currency: string;
 }
 
 export interface Balance {

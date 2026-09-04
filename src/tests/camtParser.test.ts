@@ -1234,3 +1234,107 @@ describe('CamtParser — balances the bank did not send', () => {
 		expect(statement.transactions).toHaveLength(1);
 	});
 });
+
+describe('CamtParser — what else an entry states', () => {
+	// Status, reversal, charges, the instructed amount and rate of a converted entry,
+	// the return reason, the batch, and the creditor identifier. None of these was
+	// read before.
+	const report = (entries: string) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`<Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">990.00</Amt>` +
+		`<CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-07-01</Dt></Dt></Bal>${entries}</Rpt></BkToCstmrAcctRpt></Document>`;
+
+	const parse = (entries: string) => new CamtParser(report(entries)).parse()[0].transactions;
+
+	it('reads the status as a code element (camt.052.001.08) and as plain text (earlier)', () => {
+		const [coded, plain, none] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>PDNG</Cd></Sts><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>` +
+				`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>` +
+				`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`,
+		);
+		expect(coded.status).toBe('PDNG');
+		expect(plain.status).toBe('BOOK');
+		expect(none.status).toBeUndefined();
+	});
+
+	it('reads the reversal indicator, and leaves it absent when the bank did not send it', () => {
+		const [reversed, plain] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>CRDT</CdtDbtInd><RvslInd>true</RvslInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>` +
+				`<Ntry><Amt>1</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`,
+		);
+		expect(reversed.isReversal).toBe(true);
+		expect(plain.isReversal).toBeUndefined();
+	});
+
+	it('reads charges as a total, as a single amount, or as the sum of records', () => {
+		const [total, single, records] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<Chrgs><TtlChrgsAndTaxAmt Ccy="EUR">2.50</TtlChrgsAndTaxAmt></Chrgs></Ntry>` +
+				`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<Chrgs><Amt Ccy="EUR">1.00</Amt></Chrgs></Ntry>` +
+				`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<Chrgs><Rcrd><Amt Ccy="EUR">0.30</Amt></Rcrd><Rcrd><Amt Ccy="EUR">0.20</Amt></Rcrd></Chrgs></Ntry>`,
+		);
+		expect(total.charges).toEqual({ value: 2.5, currency: 'EUR' });
+		expect(single.charges).toEqual({ value: 1, currency: 'EUR' });
+		expect(records.charges).toEqual({ value: 0.5, currency: 'EUR' });
+	});
+
+	it('reads the instructed amount and exchange rate of a converted entry', () => {
+		const [converted] = parse(
+			`<Ntry><Amt Ccy="EUR">92.15</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<AmtDtls><InstdAmt><Amt Ccy="USD">100.00</Amt><CcyXchg><SrcCcy>USD</SrcCcy><TrgtCcy>EUR</TrgtCcy>` +
+				`<XchgRate>0.9215</XchgRate></CcyXchg></InstdAmt></AmtDtls></Ntry>`,
+		);
+		expect(converted.amount).toBe(-92.15);
+		expect(converted.originalAmount).toEqual({ value: 100, currency: 'USD' });
+		expect(converted.exchangeRate).toBe(0.9215);
+	});
+
+	it('reads the return reason of a returned direct debit', () => {
+		const [returned] = parse(
+			`<Ntry><Amt>50.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><TxDtls><RtrInf><Rsn><Cd>AC04</Cd></Rsn><AddtlInf>Konto aufgeloest</AddtlInf></RtrInf></TxDtls></NtryDtls></Ntry>`,
+		);
+		expect(returned.returnReason).toEqual({ code: 'AC04', text: 'Konto aufgeloest' });
+	});
+
+	it('reads the batch of a collective entry', () => {
+		const [collective] = parse(
+			`<Ntry><Amt>300.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><Btch><MsgId>MSG-1</MsgId><PmtInfId>PMT-1</PmtInfId><NbOfTxs>3</NbOfTxs></Btch></NtryDtls></Ntry>`,
+		);
+		expect(collective.batch).toEqual({
+			messageId: 'MSG-1',
+			paymentInformationId: 'PMT-1',
+			numberOfTransactions: 3,
+		});
+	});
+
+	it('reads the creditor identifier of a direct debit into remoteIdentifier, as MT940 does from CRED+', () => {
+		const [direct, underPty] = parse(
+			`<Ntry><Amt>50.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Stadtwerke</Nm><Id><PrvtId><Othr><Id>DE98ZZZ09999999999</Id>` +
+				`<SchmeNm><Prtry>SEPA</Prtry></SchmeNm></Othr></PrvtId></Id></Cdtr></RltdPties></TxDtls></NtryDtls></Ntry>` +
+				`<Ntry><Amt>50.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><TxDtls><RltdPties><Cdtr><Pty><Nm>Stadtwerke</Nm><Id><PrvtId><Othr><Id>DE98ZZZ09999999999</Id>` +
+				`</Othr></PrvtId></Id></Pty></Cdtr></RltdPties></TxDtls></NtryDtls></Ntry>`,
+		);
+		expect(direct.remoteIdentifier).toBe('DE98ZZZ09999999999');
+		expect(underPty.remoteIdentifier).toBe('DE98ZZZ09999999999');
+		expect(direct.remoteName).toBe('Stadtwerke');
+	});
+
+	it('leaves every one of them absent on a plain entry', () => {
+		const [plain] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`,
+		);
+		expect(plain.charges).toBeUndefined();
+		expect(plain.originalAmount).toBeUndefined();
+		expect(plain.exchangeRate).toBeUndefined();
+		expect(plain.returnReason).toBeUndefined();
+		expect(plain.batch).toBeUndefined();
+		expect(plain.remoteIdentifier).toBeUndefined();
+	});
+});

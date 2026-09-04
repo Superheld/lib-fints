@@ -81,3 +81,64 @@ describe('the parameter segments this client cannot decode', () => {
 		expect(transaction.unparsedParameters).toBeUndefined();
 	});
 });
+
+describe('what the init dialog passes on from the BPD and UPD segments', () => {
+	// Every field here was decoded by its segment and read by nobody.
+	const HIBPA_FULL = "HIBPA:4:3:3+12+280:12030000+Mock Bank+3+1+300+1200+60+600'";
+	const HIKOM = "HIKOM:5:4:3+280:12030000+1+3:https?://mock.bank.url::MIM:1'";
+	const HIPINS_FULL = "HIPINS:6:1:4+1+1+0+5:38:6:Anmeldename:Legitimations-ID:HKKAZ:N:HKSAL:N'";
+	const HITANS =
+		"HITANS:7:6:4+1+1+1+J:N:0:910:2:HHD1.3.0:::chipTAN manuell:6:1:TAN-Nummer:3:J:2:N:0:0:N:N:00:0:N:1'";
+	const HIUPA = "HIUPA:8:4:4+1197651234+0+0+Erika Muster'";
+
+	function bankingInformation(...segments: string[]) {
+		const config = FinTSConfig.forFirstTimeUse('PRODUCT', '1.0', 'https://mock', '12030000');
+		const response: InitResponse = {
+			dialogId: '1',
+			success: true,
+			bankingInformationUpdated: false,
+			bankAnswers: [],
+			requiresTan: false,
+		};
+		new InitDialogInteraction(config).handleResponse(Message.decode(segments.join('')), response);
+		return config.bankingInformation;
+	}
+
+	it('the message size limit, default language and communication service', () => {
+		const { bpd } = bankingInformation(HIBPA_FULL, HIKOM, HIPINS_FULL);
+		expect(bpd?.maxMessageSizeInKb).toBe(1200);
+		expect(bpd?.defaultLanguage).toBe(1);
+		expect(bpd?.communicationService).toBe(3);
+	});
+
+	it('the PIN/TAN lengths and the labels of the login fields', () => {
+		const { bpd } = bankingInformation(HIBPA_FULL, HIPINS_FULL);
+		expect(bpd?.pinTan).toEqual({
+			minPinLength: 5,
+			maxPinLength: 38,
+			maxTanLength: 6,
+			userIdLabel: 'Anmeldename',
+			customerIdLabel: 'Legitimations-ID',
+		});
+	});
+
+	it('no pinTan when HIPINS states nothing beyond the transactions', () => {
+		const { bpd } = bankingInformation(HIBPA, "HIPINS:6:1:4+1+1+0+:::::HKKAZ:N'");
+		expect(bpd?.pinTan).toBeUndefined();
+	});
+
+	it('what HITANS says for all its methods', () => {
+		const { bpd } = bankingInformation(HIBPA_FULL, HIPINS_FULL, HITANS);
+		const [method] = bpd?.supportedTanMethods ?? [];
+		expect(method.id).toBe(910);
+		expect(method.oneStepAllowed).toBe(true);
+		expect(method.multipleOrdersAllowed).toBe(false);
+		expect(method.hashMethod).toBe(0);
+	});
+
+	it('the internal user id and the user name', () => {
+		const { upd } = bankingInformation(HIBPA_FULL, HIPINS_FULL, HIUPA);
+		expect(upd?.internalUserId).toBe('1197651234');
+		expect(upd?.userName).toBe('Erika Muster');
+	});
+});

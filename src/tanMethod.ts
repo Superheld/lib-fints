@@ -21,6 +21,12 @@ export type TanMethod = {
 	activeTanMedia: string[];
 	tanMediaRequirement: TanMediaRequirement;
 	decoupled?: DecoupledParams;
+	/** Whether the bank allows the one-step method alongside this one (HITANS). */
+	oneStepAllowed?: boolean;
+	/** Whether the bank accepts several orders in one message with this method (HITANS). */
+	multipleOrdersAllowed?: boolean;
+	/** The hash method HITANS names for this method. */
+	hashMethod?: number;
 };
 
 export type DecoupledParams = {

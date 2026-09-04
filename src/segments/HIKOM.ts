@@ -8,8 +8,8 @@ import type { Segment } from '../segment.js';
 import { SegmentDefinition } from '../segmentDefinition.js';
 
 export type HIKOMSegment = Segment & {
-	bankIdentification: Bank;
-	defaultLanguage: Language;
+	bank: Bank;
+	defLang: Language;
 	comParams: ComParams;
 };
 

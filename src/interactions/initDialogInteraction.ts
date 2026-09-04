@@ -2,6 +2,7 @@ import { type BankAccount, finTsAccountTypeToEnum } from '../bankAccount.js';
 import type { BankAnswer } from '../bankAnswer.js';
 import type { BankingInformation, BankMessage } from '../bankingInformation.js';
 import type { BankTransaction } from '../bankTransaction.js';
+import type { BPD, PinTanParameters } from '../bpd.js';
 import { Language, SyncMode, TanMediaRequirement } from '../codes.js';
 import type { FinTSConfig } from '../config.js';
 import type { Message } from '../message.js';
@@ -21,6 +22,7 @@ import { HKSYN, type HKSYNSegment } from '../segments/HKSYN.js';
 import { HKTAB } from '../segments/HKTAB.js';
 import { HKVVB, type HKVVBSegment } from '../segments/HKVVB.js';
 import type { TanMethod } from '../tanMethod.js';
+import type { UPD } from '../upd.js';
 import { type ClientResponse, CustomerInteraction } from './customerInteraction.js';
 import { SepaAccountInteraction } from './sepaAccountInteraction.js';
 import { TanMediaInteraction } from './tanMediaInteraction.js';
@@ -109,6 +111,10 @@ export class InitDialogInteraction extends CustomerInteraction {
 										autoConfirmationAllowed: method.decoupledAutoConfirmationAllowed ?? false,
 									}
 								: undefined,
+							// Stated once per HITANS, for all methods it lists.
+							oneStepAllowed: hitans.params.oneStepAllowed,
+							multipleOrdersAllowed: hitans.params.multipleTansactions,
+							hashMethod: hitans.params.hashMethod,
 						}))
 						.filter(
 							(method) => !supportedTanMethods.some((existing) => existing.id === method.id),
@@ -180,18 +186,31 @@ export class InitDialogInteraction extends CustomerInteraction {
 				}
 			});
 
-			const bpd = {
-				version: hibpa?.bpdVersion,
-				countryCode: hibpa?.bank.country,
-				bankId: hibpa?.bank.bankId,
-				bankName: hibpa?.bankName,
-				maxTransactionsPerMessage: hibpa?.maxNumTransactions,
-				supportedLanguages: hibpa?.supportedLanguages,
-				supportedHbciVersions: hibpa?.supportedHbciVersions,
+			// Everything HIPINS says besides the transactions; each field is optional there.
+			const pinTan: PinTanParameters = {
+				minPinLength: hipins.params.minPinLen,
+				maxPinLength: hipins.params.maxPinLen,
+				maxTanLength: hipins.params.maxTanLen,
+				userIdLabel: hipins.params.textUserId,
+				customerIdLabel: hipins.params.textCustomerId,
+			};
+
+			const bpd: BPD = {
+				version: hibpa.bpdVersion,
+				countryCode: hibpa.bank.country,
+				bankId: hibpa.bank.bankId,
+				bankName: hibpa.bankName,
+				maxTransactionsPerMessage: hibpa.maxNumTransactions,
+				supportedLanguages: hibpa.supportedLanguages,
+				supportedHbciVersions: hibpa.supportedHbciVersions,
 				url: bankingUrl,
 				supportedTanMethods: supportedTanMethods,
 				availableTanMethodIds: [],
 				allowedTransactions: bankTransactions,
+				maxMessageSizeInKb: hibpa.maxMessageSizeInKb,
+				defaultLanguage: hikom?.defLang,
+				communicationService: hikom?.comParams.service,
+				pinTan: Object.values(pinTan).some((value) => value !== undefined) ? pinTan : undefined,
 			};
 
 			this.config.bankingInformation.bpd = bpd;
@@ -227,10 +246,12 @@ export class InitDialogInteraction extends CustomerInteraction {
 					};
 				});
 
-			const upd = {
+			const upd: UPD = {
 				version: hiupa.updVersion,
 				usage: hiupa.updUsage,
 				bankAccounts: accounts,
+				internalUserId: hiupa.internalUserId,
+				userName: hiupa.userName,
 			};
 
 			this.config.bankingInformation.upd = upd;

@@ -52,31 +52,42 @@ export class StatementInteractionCAMT extends CustomerOrderInteraction {
 		// A response the bank spread over several messages arrives as several HICAZ
 		// segments, each carrying its own share of the CAMT documents. Taking only the
 		// first one would silently drop everything after it.
-		const camtMessages = response
-			.findAllSegments<HICAZSegment>(HICAZ.Id)
-			.flatMap((segment) => segment.bookedTransactions ?? []);
+		const segments = response.findAllSegments<HICAZSegment>(HICAZ.Id);
+		const booked = segments.flatMap((segment) => segment.bookedTransactions ?? []);
+		const noted = segments.flatMap((segment) => segment.notedTransactions ?? []);
 
-		// Parse all CAMT messages (one per booking day) and combine statements. A parse
-		// error propagates: catching it and answering with an empty list — as this once
-		// did — turned one broken document out of twenty into "success, no transactions",
-		// and a caller fetching incrementally moved on past bookings it never saw.
-		const allStatements: Statement[] = [];
-		for (const camtMessage of camtMessages) {
-			// The regex looks for the XML declaration `<?xml ... ?>`
-			// and checks if it contains the attribute encoding="UTF-8".
-			// The 'i' flag makes the match case-insensitive (e.g., for "utf-8").
-			const isUtf8Encoded = /<\?xml[^>]*encoding="UTF-8"[^>]*\?>/i.test(camtMessage);
+		// A parse error propagates: catching it and answering with an empty list — as
+		// this once did — turned one broken document out of twenty into "success, no
+		// transactions", and a caller fetching incrementally moved on past bookings it
+		// never saw.
+		clientResponse.statements = parseCamtDocuments(booked);
 
-			let xmlString: string = camtMessage;
-			if (isUtf8Encoded) {
-				// camtMessage is initially encoded as 'latin1' (ISO-8859-1), but actually contains UTF-8 data.
-				// Therefore, we need to first convert it back to a buffer using 'latin1', and then decode it as 'utf8'.
-				const intermediateBuffer = Buffer.from(camtMessage, 'latin1');
-				xmlString = intermediateBuffer.toString('utf8');
-			}
-
-			allStatements.push(...new CamtParser(xmlString).parse());
+		// The second field of HICAZ — a complete CAMT document of the pending entries,
+		// sent alongside the first and until now never read.
+		if (noted.length > 0) {
+			clientResponse.notedStatements = parseCamtDocuments(noted);
 		}
-		clientResponse.statements = allStatements;
 	}
+}
+
+/** Parses CAMT documents (one per booking day) and combines their statements. */
+function parseCamtDocuments(camtMessages: string[]): Statement[] {
+	const allStatements: Statement[] = [];
+	for (const camtMessage of camtMessages) {
+		// The regex looks for the XML declaration `<?xml ... ?>`
+		// and checks if it contains the attribute encoding="UTF-8".
+		// The 'i' flag makes the match case-insensitive (e.g., for "utf-8").
+		const isUtf8Encoded = /<\?xml[^>]*encoding="UTF-8"[^>]*\?>/i.test(camtMessage);
+
+		let xmlString: string = camtMessage;
+		if (isUtf8Encoded) {
+			// camtMessage is initially encoded as 'latin1' (ISO-8859-1), but actually contains UTF-8 data.
+			// Therefore, we need to first convert it back to a buffer using 'latin1', and then decode it as 'utf8'.
+			const intermediateBuffer = Buffer.from(camtMessage, 'latin1');
+			xmlString = intermediateBuffer.toString('utf8');
+		}
+
+		allStatements.push(...new CamtParser(xmlString).parse());
+	}
+	return allStatements;
 }

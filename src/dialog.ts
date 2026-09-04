@@ -59,30 +59,7 @@ export class Dialog {
 			throw new Error('dialog start can only be called on a new dialog');
 		}
 
-		let clientResponse: ClientResponse;
-
-		do {
-			const message = this.createCurrentCustomerMessage();
-			const responseMessage = await this.httpClient.sendMessage(message);
-			await this.handlePartedMessages(message, responseMessage, this.currentInteraction);
-			clientResponse = this.currentInteraction.handleClientResponse(responseMessage);
-			this.checkEnded(clientResponse);
-			this.dialogId = clientResponse.dialogId;
-			this.responses.set(this.currentInteraction.segId, clientResponse);
-
-			if (clientResponse.success && !clientResponse.requiresTan) {
-				this.currentInteractionIndex++;
-
-				if (this.currentInteractionIndex > 0) {
-					this.isInitialized = true;
-				}
-			}
-		} while (
-			!this.hasEnded &&
-			this.currentInteractionIndex < this.interactions.length &&
-			clientResponse.success &&
-			!clientResponse.requiresTan
-		);
+		await this.run(() => this.createCurrentCustomerMessage());
 
 		return this.responses;
 	}
@@ -104,38 +81,98 @@ export class Dialog {
 			throw new Error('there is no running customer interaction in this dialog to continue');
 		}
 
-		let clientResponse: ClientResponse;
-
-		let isFirstMessage = true;
-
-		do {
-			const message = isFirstMessage
-				? this.createCurrentTanMessage(tanOrderReference, tan)
-				: this.createCurrentCustomerMessage();
-			const responseMessage = await this.httpClient.sendMessage(message);
-			await this.handlePartedMessages(message, responseMessage, this.currentInteraction);
-			clientResponse = this.currentInteraction.handleClientResponse(responseMessage);
-			this.checkEnded(clientResponse);
-			this.dialogId = clientResponse.dialogId;
-			this.responses.set(this.currentInteraction.segId, clientResponse);
-
-			if (clientResponse.success && !clientResponse.requiresTan) {
-				this.currentInteractionIndex++;
-
-				if (this.currentInteractionIndex > 0) {
-					this.isInitialized = true;
-				}
-			}
-
-			isFirstMessage = false;
-		} while (
-			!this.hasEnded &&
-			this.currentInteractionIndex < this.interactions.length &&
-			clientResponse.success &&
-			!clientResponse.requiresTan
-		);
+		await this.run(() => this.createCurrentTanMessage(tanOrderReference, tan));
 
 		return this.responses;
+	}
+
+	/**
+	 * Runs the interactions from the current one on, the first with the message given.
+	 *
+	 * A dialog the bank has opened stays open at the bank until HKEND reaches it. When
+	 * an order fails, this used to stop right there: the refusal came back, the dialog
+	 * stayed open, and a caller that retried opened another one each time — until the
+	 * bank refused those for being too many. The same when handling a response threw.
+	 * Both now end the dialog first: a refusal moves straight on to HKEND, an exception
+	 * sends HKEND as best it can and is then rethrown. Neither applies while the dialog
+	 * is not open yet — a failed initialisation has nothing to end.
+	 */
+	private async run(firstMessage: () => CustomerMessage): Promise<void> {
+		let message = firstMessage();
+		let proceed: boolean;
+
+		try {
+			do {
+				const responseMessage = await this.httpClient.sendMessage(message);
+				await this.handlePartedMessages(message, responseMessage, this.currentInteraction);
+				const clientResponse = this.currentInteraction.handleClientResponse(responseMessage);
+				this.checkEnded(clientResponse);
+				this.dialogId = clientResponse.dialogId;
+				this.responses.set(this.currentInteraction.segId, clientResponse);
+
+				proceed = this.advance(clientResponse);
+				if (proceed) {
+					message = this.createCurrentCustomerMessage();
+				}
+			} while (proceed);
+		} catch (error) {
+			await this.endAfterFailure();
+			throw error;
+		}
+	}
+
+	/** Moves on from the interaction just answered; says whether there is one to run now. */
+	private advance(response: ClientResponse): boolean {
+		if (response.requiresTan) {
+			return false;
+		}
+
+		if (response.success) {
+			this.currentInteractionIndex++;
+			this.isInitialized = true;
+			return !this.hasEnded && this.currentInteractionIndex < this.interactions.length;
+		}
+
+		if (!this.isOpenAtTheBank()) {
+			return false;
+		}
+
+		this.currentInteractionIndex = this.interactions.length - 1;
+		return true;
+	}
+
+	/**
+	 * Open at the bank, and this is not already the ending: the initialisation went
+	 * through, the bank has not ended it, and the interaction at hand is not HKEND.
+	 */
+	private isOpenAtTheBank(): boolean {
+		return (
+			this.isInitialized &&
+			!this.hasEnded &&
+			this.currentInteractionIndex < this.interactions.length - 1
+		);
+	}
+
+	/**
+	 * Sends HKEND for a dialog an exception left open. Best effort: whatever goes wrong
+	 * here is not what the caller needs to hear about — the exception that got us here is.
+	 */
+	private async endAfterFailure(): Promise<void> {
+		if (!this.isOpenAtTheBank()) {
+			return;
+		}
+
+		this.currentInteractionIndex = this.interactions.length - 1;
+
+		try {
+			const message = this.createCurrentCustomerMessage();
+			const responseMessage = await this.httpClient.sendMessage(message);
+			const clientResponse = this.currentInteraction.handleClientResponse(responseMessage);
+			this.checkEnded(clientResponse);
+			this.responses.set(this.currentInteraction.segId, clientResponse);
+		} catch {
+			// The dialog may stay open at the bank; the caller gets the original error.
+		}
 	}
 
 	addCustomerInteraction(interaction: CustomerInteraction, afterCurrent = false): void {

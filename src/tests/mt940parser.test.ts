@@ -170,3 +170,24 @@ describe('a statement spread over several pages', () => {
 		expect(second.closingBalance?.value).toBe(950);
 	});
 });
+
+describe('the credit/debit mark of :61:', () => {
+	const statementWith = (mark: string) =>
+		':20:STARTUMS\r\n:25:10020030/1234567\r\n:28C:1\r\n:60F:C260801EUR1000,00\r\n' +
+		`:61:2608010801${mark}100,NMSCNONREF\r\n:62F:C260801EUR900,00\r\n`;
+	const amountWith = (mark: string) =>
+		new Mt940Parser(statementWith(mark)).parse()[0].transactions[0].amount;
+
+	it('reads a reversal as the opposite of what it reverses', () => {
+		expect(amountWith('C')).toBe(100);
+		expect(amountWith('D')).toBe(-100);
+		expect(amountWith('RC')).toBe(-100);
+		expect(amountWith('RD')).toBe(100);
+	});
+
+	it('refuses a line without one, instead of finding a D further along', () => {
+		// `NMSC` has no D, `NONREF` has none — but the closing balance line does, and
+		// an unanchored `D` would have matched there and carried on from that point.
+		expect(() => new Mt940Parser(statementWith('X')).parse()).toThrow(/Expected CreditDebit/);
+	});
+});

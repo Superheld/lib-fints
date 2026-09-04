@@ -46,6 +46,16 @@ const tokens: { [key in TokenType]: RegExp } = {
 	WhiteSpace: /^\s+/,
 };
 
+/**
+ * A calendar day as a Date: noon local time, the convention the CAMT and MT535 parsers
+ * already follow. Local midnight — what this used to be — is the evening before in
+ * UTC, so `JSON.stringify` moved every MT940 booking a day back while the same booking
+ * fetched as CAMT stayed put.
+ */
+function calendarDay(year: number, month: number, day: number): Date {
+	return new Date(year, month - 1, day, 12);
+}
+
 export class Mt940Parser {
 	tokenizer: Mt940Tokenizer;
 
@@ -345,7 +355,7 @@ export class Mt940Parser {
 		const month = parseInt(date.substring(2, 4), 10);
 		const day = parseInt(date.substring(4, 6), 10);
 
-		return new Date(year, month - 1, day);
+		return calendarDay(year, month, day);
 	}
 
 	/**
@@ -363,11 +373,11 @@ export class Mt940Parser {
 		const entryDay = parseInt(entryDateString.substring(2, 4), 10);
 		const valueYear = valueDate.getFullYear();
 
-		let entryDate = new Date(valueYear, entryMonth - 1, entryDay);
+		let entryDate = calendarDay(valueYear, entryMonth, entryDay);
 		let smallestDistance = Math.abs(entryDate.getTime() - valueDate.getTime());
 
 		for (const year of [valueYear - 1, valueYear + 1]) {
-			const candidate = new Date(year, entryMonth - 1, entryDay);
+			const candidate = calendarDay(year, entryMonth, entryDay);
 			const distance = Math.abs(candidate.getTime() - valueDate.getTime());
 			if (distance < smallestDistance) {
 				entryDate = candidate;

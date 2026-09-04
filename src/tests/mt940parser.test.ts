@@ -30,15 +30,15 @@ describe('parse', () => {
 		expect(statement.relatedReference).toBe('9876543210');
 		expect(statement.account).toBe('10020030/1234567');
 		expect(statement.number).toBe('5/1');
-		expect(statement.openingBalance?.date).toEqual(new Date('2002-11-01T00:00'));
+		expect(statement.openingBalance?.date).toEqual(new Date('2002-11-01T12:00'));
 		expect(statement.openingBalance?.currency).toBe('EUR');
 		expect(statement.openingBalance?.value).toBe(2187.95);
-		expect(statement.closingBalance?.date).toEqual(new Date('2002-11-31T00:00'));
+		expect(statement.closingBalance?.date).toEqual(new Date('2002-11-31T12:00'));
 		expect(statement.closingBalance?.currency).toBe('EUR');
 		expect(statement.closingBalance?.value).toBe(4387.95);
 		expect(statement.transactions).toHaveLength(2);
-		expect(statement.transactions[0].valueDate).toEqual(new Date('2002-11-01T00:00'));
-		expect(statement.transactions[0].entryDate).toEqual(new Date('2002-11-02T00:00'));
+		expect(statement.transactions[0].valueDate).toEqual(new Date('2002-11-01T12:00'));
+		expect(statement.transactions[0].entryDate).toEqual(new Date('2002-11-02T12:00'));
 		expect(statement.transactions[0].fundsCode).toBe('R');
 		expect(statement.transactions[0].amount).toBe(-800);
 		expect(statement.transactions[0].transactionType).toBe('NSTO');
@@ -78,25 +78,25 @@ describe('entry date year', () => {
 	}
 
 	it('keeps the value date year when both fall in the same month', () => {
-		expect(entryDateOf('250930', '0930')).toEqual(new Date('2025-09-30T00:00'));
+		expect(entryDateOf('250930', '0930')).toEqual(new Date('2025-09-30T12:00'));
 	});
 
 	it('keeps the value date year when the entry follows a backdated value date', () => {
 		// A transfer settled on the last day of September and posted on the first of
 		// October. Comparing the months alone would push this back a full year.
-		expect(entryDateOf('250930', '1001')).toEqual(new Date('2025-10-01T00:00'));
+		expect(entryDateOf('250930', '1001')).toEqual(new Date('2025-10-01T12:00'));
 	});
 
 	it('takes the previous year when the entry precedes a value date in January', () => {
-		expect(entryDateOf('260102', '1230')).toEqual(new Date('2025-12-30T00:00'));
+		expect(entryDateOf('260102', '1230')).toEqual(new Date('2025-12-30T12:00'));
 	});
 
 	it('takes the next year when the entry follows a value date in December', () => {
-		expect(entryDateOf('251230', '0102')).toEqual(new Date('2026-01-02T00:00'));
+		expect(entryDateOf('251230', '0102')).toEqual(new Date('2026-01-02T12:00'));
 	});
 
 	it('falls back to the value date when no entry date is given', () => {
-		expect(entryDateOf('250930', '')).toEqual(new Date('2025-09-30T00:00'));
+		expect(entryDateOf('250930', '')).toEqual(new Date('2025-09-30T12:00'));
 	});
 });
 

@@ -15,8 +15,11 @@ describe('HKCAZ v1', () => {
 			},
 			acceptedCamtFormats: ['urn:iso:std:iso:20022:tech:xsd:camt.052.001.08'],
 			allAccounts: false,
-			from: new Date('2023-01-01'),
-			to: new Date('2023-12-31'),
+			// Local calendar days. `new Date('2023-01-01')` would be midnight UTC, which
+			// west of Greenwich is still December 31st — and that is the day a caller
+			// there means to name least of all.
+			from: new Date(2023, 0, 1),
+			to: new Date(2023, 11, 31),
 		};
 
 		expect(encode(segment)).toBe(

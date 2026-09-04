@@ -61,9 +61,9 @@ describe('HIEKA v5', () => {
 		const segment = decode(text) as HIEKASegment;
 
 		expect(segment.format).toBe(StatementFormat.PDF);
-		expect(segment.timeRange?.from).toEqual(new Date('2026-06-01'));
-		expect(segment.timeRange?.to).toEqual(new Date('2026-06-30'));
-		expect(segment.date).toEqual(new Date('2026-07-01'));
+		expect(segment.timeRange?.from).toEqual(new Date('2026-06-01T12:00'));
+		expect(segment.timeRange?.to).toEqual(new Date('2026-06-30T12:00'));
+		expect(segment.date).toEqual(new Date('2026-07-01T12:00'));
 		expect(segment.year).toBe(2026);
 		expect(segment.number).toBe(7);
 		expect(segment.booked).toBe('%PDF-1.7 ');
@@ -86,7 +86,7 @@ describe('HIEKA v5', () => {
 		const segment = decode("HIEKA:5:5:3+3+20260601:20260630++++@9@%PDF-1.7 '") as HIEKASegment;
 
 		expect(segment.format).toBe(StatementFormat.PDF);
-		expect(segment.timeRange?.from).toEqual(new Date('2026-06-01'));
+		expect(segment.timeRange?.from).toEqual(new Date('2026-06-01T12:00'));
 		expect(segment.date).toBeUndefined();
 		expect(segment.number).toBeUndefined();
 		expect(segment.booked).toBe('%PDF-1.7 ');
@@ -222,7 +222,7 @@ describe('ElectronicStatementInteraction', () => {
 		expect(statement.format).toBe(StatementFormat.PDF);
 		expect(statement.year).toBe(2026);
 		expect(statement.number).toBe(7);
-		expect(statement.from).toEqual(new Date('2026-06-01'));
+		expect(statement.from).toEqual(new Date('2026-06-01T12:00'));
 		expect(statement.iban).toBe('DE991234567123456');
 		expect(statement.accountName).toBe('Muster GmbH');
 		expect(statement.receipt).toBe('abcd');

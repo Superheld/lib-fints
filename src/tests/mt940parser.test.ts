@@ -191,3 +191,34 @@ describe('the credit/debit mark of :61:', () => {
 		expect(() => new Mt940Parser(statementWith('X')).parse()).toThrow(/Expected CreditDebit/);
 	});
 });
+
+describe('SEPA tags in the purpose', () => {
+	const transactionWith = (purposeSubfields: string) =>
+		new Mt940Parser(
+			':20:STARTUMS\r\n:25:10020030/1234567\r\n:28C:1\r\n:60F:C260801EUR1000,00\r\n' +
+				':61:2608010801D100,NMSCNONREF\r\n' +
+				`:86:105?00LASTSCHRIFT${purposeSubfields}\r\n` +
+				':62F:C260801EUR900,00\r\n',
+		).parse()[0].transactions[0];
+
+	it('are read when the purpose opens with one', () => {
+		const t = transactionWith('?20EREF+E123?21MREF+M456?22SVWZ+Miete August');
+		expect(t.e2eReference).toBe('E123');
+		expect(t.mandateReference).toBe('M456');
+		expect(t.purpose).toBe('Miete August');
+	});
+
+	it('are read when the purpose opens with plain text', () => {
+		// The loop used to stop at "Dauerauftrag" and leave every tag as text.
+		const t = transactionWith('?20Dauerauftrag?21EREF+E123?22MREF+M456?23SVWZ+Miete August');
+		expect(t.e2eReference).toBe('E123');
+		expect(t.mandateReference).toBe('M456');
+		expect(t.purpose).toBe('Miete August');
+	});
+
+	it('leave the purpose as it is when there is no SVWZ+', () => {
+		const t = transactionWith('?20Dauerauftrag?21EREF+E123');
+		expect(t.e2eReference).toBe('E123');
+		expect(t.purpose).toBe('Dauerauftrag EREF+E123');
+	});
+});

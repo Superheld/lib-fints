@@ -9,8 +9,9 @@ import type { HIEKASParameter } from '../segments/HIEKAS.js';
 import { HKEKA, type HKEKASegment, type StatementFormat } from '../segments/HKEKA.js';
 import { type ClientResponse, CustomerOrderInteraction } from './customerInteraction.js';
 
+/** Payload fields are absent when the order did not go through — `success` false or `requiresTan` true. */
 export interface ElectronicStatementResponse extends ClientResponse {
-	statements: ElectronicStatement[];
+	statements?: ElectronicStatement[];
 	/**
 	 * The offset to pass to the next call when the bank announced further documents
 	 * (answer code 3040), undefined when no more statements are waiting.

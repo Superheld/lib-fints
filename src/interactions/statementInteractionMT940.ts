@@ -26,9 +26,7 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 		}
 
 		const descriptor =
-			version <= 6
-				? nationalAccount(bankAccount)
-				: internationalAccount(init, bankAccount);
+			version <= 6 ? nationalAccount(bankAccount) : internationalAccount(init, bankAccount);
 
 		const hkkaz: HKKAZSegment = {
 			header: { segId: HKKAZ.Id, segNr: 0, version: version },

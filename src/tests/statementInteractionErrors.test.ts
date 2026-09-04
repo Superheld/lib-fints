@@ -78,3 +78,20 @@ describe('a statement interaction faced with a payload it cannot parse', () => {
 		expect((camtResponse as { statements: unknown[] }).statements).toHaveLength(1);
 	});
 });
+
+describe('a statement interaction whose order the bank refused', () => {
+	// `handleResponse` runs only when the order went through. The response then has
+	// no `statements` at all — the type says so, and this pins it down: it is NOT an
+	// empty list, which would read as "no transactions in this period".
+	it('answers without a statements field, not with an empty list', () => {
+		const refused = Message.decode("HIRMG:3:2+9010::Auftrag abgelehnt.'");
+
+		const mt940 = new StatementInteractionMT940('1234567890').handleClientResponse(refused);
+		expect(mt940.success).toBe(false);
+		expect('statements' in mt940).toBe(false);
+
+		const camt = new StatementInteractionCAMT('1234567890').handleClientResponse(refused);
+		expect(camt.success).toBe(false);
+		expect('statements' in camt).toBe(false);
+	});
+});

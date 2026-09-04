@@ -1140,3 +1140,49 @@ describe('CamtParser — purpose code and ultimate party', () => {
 		expect(new CamtParser(prtry).parse()[0].transactions[0].purposeCode).toBe('EIGEN01');
 	});
 });
+
+describe('CamtParser — dates the bank did not send', () => {
+	const report = (balance: string, entry: string) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`${balance}${entry}</Rpt></BkToCstmrAcctRpt></Document>`;
+	const closing = (date: string) =>
+		`<Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">990.00</Amt>` +
+		`<CdtDbtInd>CRDT</CdtDbtInd>${date}</Bal>`;
+	const entry = (dates: string) =>
+		`<Ntry><Amt>10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>PDNG</Sts>${dates}` +
+		`<AcctSvcrRef>REF1</AcctSvcrRef></Ntry>`;
+
+	it('takes the value date as the entry date of a pending entry without a booking date', () => {
+		// Pending entries are not booked yet, so they commonly come without BookgDt.
+		// This used to put in today's date — the day the entry was fetched.
+		const [statement] = new CamtParser(
+			report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry('<ValDt><Dt>2026-07-03</Dt></ValDt>')),
+		).parse();
+		const [transaction] = statement.transactions;
+		expect(transaction.valueDate.getDate()).toBe(3);
+		expect(transaction.entryDate.getDate()).toBe(3);
+	});
+
+	it('refuses an entry with neither a booking nor a value date', () => {
+		expect(() =>
+			new CamtParser(report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry(''))).parse(),
+		).toThrow(/Entry REF1 has neither a booking nor a value date/);
+	});
+
+	it('reads a balance date stated as a date-time', () => {
+		const [statement] = new CamtParser(
+			report(
+				closing('<Dt><DtTm>2026-01-22T00:00:00.000+01:00</DtTm></Dt>'),
+				entry('<BookgDt><Dt>2026-01-22</Dt></BookgDt>'),
+			),
+		).parse();
+		expect(statement.closingBalance.date).toEqual(new Date('2026-01-22T00:00:00.000+01:00'));
+	});
+
+	it('refuses a balance without a date', () => {
+		expect(() =>
+			new CamtParser(report(closing(''), entry('<BookgDt><Dt>2026-07-01</Dt></BookgDt>'))).parse(),
+		).toThrow(/Balance of type CLBD in report 1 has no date/);
+	});
+});

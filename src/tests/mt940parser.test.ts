@@ -142,3 +142,31 @@ describe('remote IBAN (subfield ?38)', () => {
 		expect(transaction.remoteBankId).toBe('10020030');
 	});
 });
+
+describe('a statement spread over several pages', () => {
+	// The pages of one statement carry intermediate balances, `:60M:` and `:62M:`,
+	// where a statement in one piece has `:60F:` and `:62F:`. Each page parses as a
+	// Statement of its own, and its balances are the ones on that page.
+	const pages =
+		':20:STARTUMS\r\n:25:10020030/1234567\r\n:28C:5/1\r\n' +
+		':60F:C260801EUR1000,00\r\n' +
+		':61:2608010801DR100,NMSCNONREF\r\n' +
+		':62M:C260801EUR900,00\r\n' +
+		':20:STARTUMS\r\n:25:10020030/1234567\r\n:28C:5/2\r\n' +
+		':60M:C260801EUR900,00\r\n' +
+		':61:2608020802CR50,NMSCNONREF\r\n' +
+		':62F:C260802EUR950,00\r\n';
+
+	it('reads the intermediate balances as the balances of their page', () => {
+		const [first, second] = new Mt940Parser(pages).parse();
+
+		expect(first.number).toBe('5/1');
+		expect(first.openingBalance.value).toBe(1000);
+		expect(first.closingBalance.value).toBe(900);
+		expect(first.closingBalance.date).toEqual(new Date('2026-08-01T12:00'));
+
+		expect(second.number).toBe('5/2');
+		expect(second.openingBalance.value).toBe(900);
+		expect(second.closingBalance.value).toBe(950);
+	});
+});

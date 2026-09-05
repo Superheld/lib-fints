@@ -222,3 +222,37 @@ describe('SEPA tags in the purpose', () => {
 		expect(t.purpose).toBe('Dauerauftrag EREF+E123');
 	});
 });
+
+describe('a continuation line beginning with a colon', () => {
+	// MT940 wraps the :86: text at 65 characters without looking at the content. When the
+	// wrap falls right before a colon in the purpose, the next line begins with ':' —
+	// and the joining pattern once took that for the next tag, ending the field early.
+	// The rest of the purpose and every subfield after it, remote name included, were
+	// gone without an error. Measured at one bank in 12 of 678 fields.
+	const statement = (lines: string[]) =>
+		':20:1234567\r\n:25:10020030/1234567\r\n:28C:5/1\r\n:60F:C260801EUR1000,00\r\n' +
+		':61:2608010801DR100,NMSCNONREF\r\n' +
+		`${lines.join('\r\n')}\r\n` +
+		':62F:C260801EUR900,00\r\n';
+
+	it('is joined to the field like any other continuation line', () => {
+		const transaction = new Mt940Parser(
+			statement([
+				':86:166?00SEPA GUTSCHRIFT?20INVOICE NUMBER',
+				':2026-0001?22SECOND PART?32EXAMPLE GMBH',
+			]),
+		).parse()[0].transactions[0];
+
+		expect(transaction.purpose).toBe('INVOICE NUMBER:2026-0001SECOND PART');
+		expect(transaction.remoteName).toBe('EXAMPLE GMBH');
+	});
+
+	it('still ends the field at the next tag', () => {
+		const statements = new Mt940Parser(
+			statement([':86:166?00SEPA GUTSCHRIFT?20INVOICE NUMBER?32EXAMPLE GMBH']),
+		).parse();
+
+		expect(statements[0].transactions[0].purpose).toBe('INVOICE NUMBER');
+		expect(statements[0].closingBalance?.value).toBe(900);
+	});
+});

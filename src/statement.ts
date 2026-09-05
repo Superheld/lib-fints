@@ -28,14 +28,42 @@ export interface Transaction {
 	fundsCode: string;
 	amount: number;
 	transactionType: string;
+	/**
+	 * MT940: the customer reference of :61:. CAMT: the end-to-end reference, or empty
+	 * when the bank sends none — which some banks never do.
+	 */
 	customerReference: string;
 	bankReference: string;
+	/**
+	 * Which vocabulary this holds depends on the format the statement was fetched in —
+	 * see `StatementResponse.format`. MT940: the numeric business transaction code
+	 * (Geschäftsvorfallcode) that opens :86:, e.g. `117`. CAMT: the ISO 20022
+	 * sub-family code, e.g. `ICDT`. Store the format alongside, or the two will meet in
+	 * one column.
+	 */
 	transactionCode?: string;
+	/**
+	 * MT940: the short booking text of subfield ?00, e.g. `SEPA-Überweisung`. CAMT: the
+	 * free text of `AddtlNtryInf`, which a bank fills as it likes. Same field, different
+	 * vocabulary; see {@link transactionCode}.
+	 */
 	bookingText?: string;
 	primeNotesNr?: string;
+	/**
+	 * The same booking reads differently here depending on the format: MT940's :86:
+	 * carries the remittance information together with whatever else the bank put into
+	 * subfields ?20–?29 and ?60–?63 (often the booking text and the counterparty once
+	 * more), CAMT's `RmtInf/Ustrd` carries the remittance information alone. Measured
+	 * at one bank, the two differed in every pair — and the MT940 text was the longer.
+	 */
 	purpose?: string;
 	remoteBankId?: string;
 	remoteAccountNumber?: string;
+	/**
+	 * MT940 states the name in subfields of 27 characters (?32, ?33) and cuts it there;
+	 * CAMT states it in full. Names longer than that differ between the formats by their
+	 * tail.
+	 */
 	remoteName?: string;
 	remoteIdentifier?: string;
 	client?: string;

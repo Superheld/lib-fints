@@ -9,6 +9,7 @@ import { CreditCardStatementInteraction } from './interactions/creditcardStateme
 import type {
 	ClientResponse,
 	CustomerOrderInteraction,
+	AccountStatementFormat,
 	StatementResponse,
 } from './interactions/customerInteraction.js';
 import {
@@ -108,9 +109,7 @@ export class FinTSClient {
 	 * @returns the account balance response
 	 */
 	async getAccountBalance(account: AccountRef): Promise<AccountBalanceResponse> {
-		const response = await this.startCustomerOrderInteraction(
-			new BalanceInteraction(account),
-		);
+		const response = await this.startCustomerOrderInteraction(new BalanceInteraction(account));
 		return response as AccountBalanceResponse;
 	}
 
@@ -152,39 +151,53 @@ export class FinTSClient {
 	}
 
 	/**
-	 * Fetches the account statements for the given account number
-	 * @param account - the account number to fetch the statements for, must be an account available in the config.baningInformation.UPD.accounts
+	 * Names the formats the bank offers for the account's statements — CAMT (HKCAZ),
+	 * MT940 (HKKAZ), both or neither. What `getAccountStatements` wants asked for must be
+	 * among them.
+	 */
+	getSupportedStatementFormats(account: AccountRef): AccountStatementFormat[] {
+		const formats: AccountStatementFormat[] = [];
+		if (this.config.isAccountTransactionSupported(account, HKCAZ.Id)) formats.push('CAMT');
+		if (this.config.isAccountTransactionSupported(account, HKKAZ.Id)) formats.push('MT940');
+		return formats;
+	}
+
+	/**
+	 * Fetches the account statements for the given account in the given format
+	 * @param account - the account to fetch the statements for, must be an account available in the config.bankingInformation.UPD.accounts
 	 * @param from - an optional start date of the period to fetch the statements for
 	 * @param to - an optional end date of the period to fetch the statements for
-	 * @param preferCamt - whether to prefer CAMT format over MT940 when both are supported (default: true)
+	 * @param format - the statement format to ask the bank for, CAMT by default. Throws when the
+	 * account does not offer it: there is no silent fallback to the other format, because the two
+	 * fill `transactionCode` and `bookingText` from different vocabularies and a caller must know
+	 * which one it holds. Use `getSupportedStatementFormats` to choose.
 	 * @returns an account statements response containing an array of statements
 	 */
 	async getAccountStatements(
 		account: AccountRef,
 		from?: Date,
 		to?: Date,
-		preferCamt: boolean = true,
+		format: AccountStatementFormat = 'CAMT',
 	): Promise<StatementResponse> {
-		// Check what formats the bank supports
-		const camtSupported = this.config.isAccountTransactionSupported(account, 'HKCAZ');
-		const mt940Supported = this.config.isAccountTransactionSupported(account, 'HKKAZ');
-
-		if (!camtSupported && !mt940Supported) {
-			throw Error(`Account ${describeAccount(account)} does not support account statements`);
+		const supported = this.getSupportedStatementFormats(account);
+		if (!supported.includes(format)) {
+			// The fourth parameter used to be a boolean `preferCamt` with a silent fallback. A
+			// caller still passing `true` sees it quoted here as the format it asked for,
+			// instead of getting a format it never named.
+			const offer =
+				supported.length > 0
+					? `offers only ${supported.join(' and ')}`
+					: 'does not support account statements';
+			throw Error(
+				`Account ${describeAccount(account)} ${offer}; statements in the format '${format}' cannot be fetched`,
+			);
 		}
 
-		// Choose format based on support and preference
-		const useCAMT = (preferCamt && camtSupported) || (!mt940Supported && camtSupported);
-
-		if (useCAMT) {
-			return (await this.startCustomerOrderInteraction(
-				new StatementInteractionCAMT(account, from, to),
-			)) as StatementResponse;
-		} else {
-			return (await this.startCustomerOrderInteraction(
-				new StatementInteractionMT940(account, from, to),
-			)) as StatementResponse;
-		}
+		const interaction =
+			format === 'CAMT'
+				? new StatementInteractionCAMT(account, from, to)
+				: new StatementInteractionMT940(account, from, to);
+		return (await this.startCustomerOrderInteraction(interaction)) as StatementResponse;
 	}
 
 	/**

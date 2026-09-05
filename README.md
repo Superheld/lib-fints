@@ -198,7 +198,7 @@ The following table shows all transactions supported by the FinTSClient interfac
 | -------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------- | ----------- | ---------------- |
 | **Synchronization**        | `synchronize()`                                                      | Synchronizes bank and account information, updating config.bankingInformation   | HKIDN, HKVVB, HKSYN, HKTAB | ✓           | ❌               |
 | **Account Balance**        | `getAccountBalance(accountNumber)`                                   | Fetches the current balance for a specific account                              | HKSAL                      | ✓           | ✓                |
-| **Account Statements**     | `getAccountStatements(accountNumber, from?, to?)`                    | Fetches account transactions/statements for a date range (MT940 or CAMT format) | HKKAZ, HKCAZ               | ✓           | ✓                |
+| **Account Statements**     | `getAccountStatements(accountNumber, from?, to?, format?)`           | Fetches account transactions/statements for a date range, as CAMT (default) or MT940; throws when the account does not offer the requested format | HKCAZ, HKKAZ               | ✓           | ✓                |
 | **Portfolio**              | `getPortfolio(accountNumber, currency?, priceQuality?, maxEntries?)` | Fetches securities portfolio information for depot accounts                     | HKWPD                      | ✓           | ✓                |
 | **Credit Card Statements** | `getCreditCardStatements(accountNumber, from?)`                      | Fetches credit card statements for credit card accounts                         | DKKKU                      | ✓           | ✓                |
 | **Electronic Statements**  | `getElectronicStatements(accountNumber, options?)`                   | Fetches the statement document from the electronic mailbox, usually a PDF       | HKEKA                      | ✓           | ✓                |
@@ -213,6 +213,7 @@ For each account-specific transaction, the client provides corresponding `can*` 
 | -------------------------------------------- | --------------------------------------------------------------- |
 | `canGetAccountBalance(accountNumber?)`       | Checks if account balance fetching is supported                 |
 | `canGetAccountStatements(accountNumber?)`    | Checks if account statements fetching is supported (MT940/CAMT) |
+| `getSupportedStatementFormats(accountNumber)` | Names the statement formats the account offers: `'CAMT'`, `'MT940'`, both or none |
 | `canGetPortfolio(accountNumber?)`            | Checks if portfolio information fetching is supported           |
 | `canGetCreditCardStatements(accountNumber?)` | Checks if credit card statements fetching is supported          |
 | `canGetElectronicStatements(accountNumber?)` | Checks if electronic account statements fetching is supported   |

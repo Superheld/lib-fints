@@ -510,14 +510,15 @@ export class CamtParser {
 
 			const accountServicerRef = this.getValueFromPath(entry, 'AcctSvcrRef') || '';
 			const entryReference = this.getValueFromPath(entry, 'NtryRef') || undefined;
-			const additionalEntryInfo = this.getValueFromPath(entry, 'AddtlNtryInf') || '';
+			const additionalEntryInfo = this.getValueFromPath(entry, 'AddtlNtryInf') || undefined;
 
 			// One set of transaction details for a single payment; several for a
 			// collective entry — a payroll, a direct-debit run — booked as one entry with
 			// the total. The XML parser hands over an object for one and an array for
 			// several, and every `getValueFromPath` into an array came back undefined: a
 			// collective entry lost every detail it had. Each payment is read on its own
-			// now; a single one lands on the transaction, several in `details`.
+			// now; a single one lands on the transaction, several in `details`, and the
+			// party fields of the entry are absent, a collective having no one counterparty.
 			const rawDetails = entry.NtryDtls?.TxDtls;
 			const allDetails = (
 				rawDetails === undefined ? [] : Array.isArray(rawDetails) ? rawDetails : [rawDetails]
@@ -551,6 +552,12 @@ export class CamtParser {
 				(firstDetails ? this.parseAmountDetails(firstDetails) : undefined);
 			const batch = this.parseBatch(entry);
 
+			// The optional fields are absent when the bank sent nothing — not '', which
+			// this once put there for every one of them. An empty string is a value: a
+			// caller asking "did this field arrive?" got yes for a purpose code no bank
+			// had sent, and the same check that worked after an MT940 fetch, where the
+			// field is genuinely absent, quietly stopped working after a CAMT one. The
+			// four fields typed as required keep '' where there is nothing.
 			return {
 				valueDate: parsedValueDate,
 				entryDate,
@@ -559,21 +566,21 @@ export class CamtParser {
 				transactionType: bkTxCd.familyCode || '',
 				customerReference: single?.e2eReference ?? '',
 				bankReference: accountServicerRef,
-				transactionCode: bkTxCd.subFamilyCode || '',
-				purpose: single?.purpose ?? '',
-				remoteName: single?.remoteName ?? '',
-				remoteAccountNumber: single?.remoteIban ?? '',
-				remoteBankId: single?.remoteBankId ?? '',
-				e2eReference: single?.e2eReference ?? '',
-				mandateReference: single?.mandateReference ?? '',
+				transactionCode: bkTxCd.subFamilyCode,
+				purpose: single?.purpose,
+				remoteName: single?.remoteName,
+				remoteAccountNumber: single?.remoteIban,
+				remoteBankId: single?.remoteBankId,
+				e2eReference: single?.e2eReference,
+				mandateReference: single?.mandateReference,
 				additionalInformation: additionalEntryInfo,
 				bookingText: additionalEntryInfo,
 				// Stated separately from `remoteAccountNumber` so a caller can tell an IBAN
 				// from whatever the format happened to offer — MT940 puts the legacy account
 				// number in that field.
-				remoteIban: single?.remoteIban ?? '',
-				purposeCode: single?.purposeCode ?? '',
-				ultimateParty: single?.ultimateParty ?? '',
+				remoteIban: single?.remoteIban,
+				purposeCode: single?.purposeCode,
+				ultimateParty: single?.ultimateParty,
 				status,
 				isReversal,
 				charges,

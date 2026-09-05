@@ -116,7 +116,7 @@ export interface Transaction {
 	 * total, and lists the payments in it as several transaction details. Where there
 	 * is one, its fields are on the transaction itself and this is absent. Where
 	 * there are several, no single counterparty exists for the entry: the party
-	 * fields on the transaction stay empty and the payments are here.
+	 * fields on the transaction are absent and the payments are here.
 	 */
 	details?: TransactionDetail[];
 

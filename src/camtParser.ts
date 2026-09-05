@@ -359,36 +359,27 @@ export class CamtParser {
 			for (const balanceObj of balanceArray) {
 				const typeCode = this.getValueFromPath(balanceObj, 'Tp.CdOrPrtry.Cd');
 
-				// Extract amount and currency
-				let currency = 'EUR';
-				if (balanceObj.Amt && typeof balanceObj.Amt === 'object' && '@Ccy' in balanceObj.Amt) {
-					currency = (balanceObj.Amt['@Ccy'] as string) || 'EUR';
-				}
-				const value = parseFloat(this.getValueFromPath(balanceObj, 'Amt') || '0');
-
-				const creditDebitInd = this.getValueFromPath(balanceObj, 'CdtDbtInd');
-				const finalValue = creditDebitInd === 'DBIT' ? -value : value;
-
+				// A balance without an amount or without a date is a figure without
+				// meaning, and it is left out. Not made up — this once put in a zero for
+				// a missing amount and today's date for a missing date — and not fatal
+				// either: the balances accompany the entries, which are the record, and
+				// one balance the bank got wrong must not cost a caller the entries.
+				// Both are optional on a Statement for exactly this reason.
+				const money = this.moneyAt(balanceObj, 'Amt');
 				// `DtTm` as well as `Dt`: some banks state a balance date as a date-time.
-				// Entries were read that way already; balances were not, and a balance
-				// with a `DtTm` was silently dated today.
 				const dateStr =
 					this.getValueFromPath(balanceObj, 'Dt.DtTm') ||
 					this.getValueFromPath(balanceObj, 'Dt.Dt') ||
 					this.getValueFromPath(balanceObj, 'Dt');
-				if (!dateStr) {
-					// Not today's date, which this once put here: a balance is a figure AT a
-					// date, and one without is a figure without meaning.
-					throw new CamtParsingError(
-						`Balance of type ${typeCode ?? '(unknown)'} in report ${reportNumber} has no date`,
-					);
+				if (!money || !dateStr) {
+					continue;
 				}
-				const date = this.parseDate(dateStr);
 
+				const creditDebitInd = this.getValueFromPath(balanceObj, 'CdtDbtInd');
 				const balance: Balance = {
-					date,
-					currency,
-					value: finalValue,
+					date: this.parseDate(dateStr),
+					currency: money.currency,
+					value: creditDebitInd === 'DBIT' ? -money.value : money.value,
 				};
 
 				switch (typeCode) {
@@ -470,11 +461,17 @@ export class CamtParser {
 
 	private parseTransaction(entry: CamtEntry, entryNumber: number): Transaction | null {
 		try {
-			// Extract amount and credit/debit indicator
-			const amountValue = parseFloat(this.getValueFromPath(entry, 'Amt') || '0');
+			// An entry without an amount is not an entry. This once made it one of zero.
+			const money = this.moneyAt(entry, 'Amt');
+			if (!money) {
+				throw new CamtParsingError(
+					`Entry ${entryNumber} (${this.accountServicerRefOf(entry)}) has no amount; ` +
+						`its elements are: ${Object.keys(entry).join(', ')}`,
+				);
+			}
 			const creditDebitInd = this.getValueFromPath(entry, 'CdtDbtInd');
 			const isDebit = creditDebitInd === 'DBIT';
-			const amount = isDebit ? -amountValue : amountValue;
+			const amount = isDebit ? -money.value : money.value;
 
 			// Extract dates
 			const bookingDate =
@@ -487,11 +484,14 @@ export class CamtParser {
 				this.getValueFromPath(entry, 'ValDt');
 
 			// Both are optional in camt.052, and an entry the bank has not booked yet — a
-			// pending one — commonly has no booking date. Each stands in for the other;
-			// neither is invented. This once put today's date in for a missing booking
-			// date, which gave every pending entry the day it was fetched as the day it
-			// was booked.
-			if (!bookingDate && !valueDate) {
+			// pending one — commonly has no booking date. Each stands in for the other,
+			// and failing both, a date the bank stated on the transaction itself does:
+			// when it was settled, accepted or made. None of these is invented. This once
+			// put today's date in for a missing booking date, which gave every pending
+			// entry the day it was fetched as the day it was booked.
+			const relatedDate = this.relatedDateOf(entry);
+			const entryDateStr = bookingDate || valueDate || relatedDate;
+			if (!entryDateStr) {
 				// Naming the elements the entry does have is the one clue a log can give as
 				// to where this bank puts the dates instead — one such entry was seen with
 				// neither, and without the raw XML that is all there is to go on.
@@ -500,7 +500,7 @@ export class CamtParser {
 						`nor a value date; its elements are: ${Object.keys(entry).join(', ')}`,
 				);
 			}
-			const entryDate = this.parseDate(bookingDate ?? (valueDate as string));
+			const entryDate = this.parseDate(entryDateStr);
 			const parsedValueDate = valueDate ? this.parseDate(valueDate) : entryDate;
 
 			// Extract references
@@ -720,14 +720,17 @@ export class CamtParser {
 		}
 
 		// Parse CAMT date format (YYYYMMDD)
-		if (dateStr.length === 8) {
+		if (/^\d{8}$/.test(dateStr)) {
 			const year = parseInt(dateStr.substring(0, 4), 10);
 			const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Month is 0-based
 			const day = parseInt(dateStr.substring(6, 8), 10);
 			return new Date(year, month, day, 12);
 		}
 
-		return new Date(dateStr);
+		// Anything else used to become `new Date(dateStr)` — an Invalid Date when the
+		// string is not one JavaScript knows, which JSON serialises as null and nothing
+		// complains about. A date this parser cannot read is an error.
+		throw new CamtParsingError(`Cannot read the date '${dateStr}'`);
 	}
 
 	/**
@@ -849,8 +852,34 @@ export class CamtParser {
 		return '';
 	}
 
+	/**
+	 * A date the bank stated on the transaction behind an entry — settlement,
+	 * acceptance, or the transaction's own — for an entry that has neither a booking
+	 * nor a value date. Of several transaction details, the first is asked.
+	 */
+	private relatedDateOf(entry: CamtEntry): string | undefined {
+		const details = entry.NtryDtls?.TxDtls;
+		const first = (Array.isArray(details) ? details[0] : details) as GenericXMLObject | undefined;
+		if (!first) {
+			return undefined;
+		}
+		for (const path of [
+			'RltdDts.IntrBkSttlmDt',
+			'RltdDts.AccptncDtTm',
+			'RltdDts.TxDtTm',
+			'RltdDts.TradDt',
+			'RltdDts.StartDt',
+		]) {
+			const value = this.getValueFromPath(first, path);
+			if (value) {
+				return value;
+			}
+		}
+		return undefined;
+	}
+
 	private accountServicerRefOf(entry: CamtEntry): string {
-		return this.getValueFromPath(entry, 'AcctSvcrRef') ?? '(no AcctSvcrRef)';
+		return this.getValueFromPath(entry, 'AcctSvcrRef') ?? 'no AcctSvcrRef';
 	}
 
 	private parseBankTransactionCode(entry: CamtEntry | CamtTransactionDetails): {

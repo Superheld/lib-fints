@@ -733,35 +733,27 @@ export class CamtParser {
 		return '';
 	}
 
+	/**
+	 * The calendar day the bank names, as a Date at local noon — the convention every
+	 * other date in this library follows.
+	 *
+	 * The day is taken from the components the bank wrote, `2025-12-08`, whatever
+	 * follows them: a time, an offset, both, or nothing. A date with an offset
+	 * (`2025-12-08-01:00`, `2025-12-10T00:00:00+01:00`) used to be kept as the instant
+	 * it names — midnight in the bank's zone — which reads back as the intended day in
+	 * Berlin and as the day before anywhere west of it. The same booking then had one
+	 * entry date fetched as MT940 and another fetched as CAMT, and in Berlin nothing
+	 * looked wrong.
+	 */
 	private parseDate(dateStr: string): Date {
-		let processedDateStr = dateStr;
-		// Handle date-only with timezone, e.g., "2026-01-22+01:00"
-		// The Date constructor may not parse this correctly, so we add a time part.
-		if (/^\d{4}-\d{2}-\d{2}[+-]\d{2}:\d{2}$/.test(dateStr)) {
-			processedDateStr = `${dateStr.substring(0, 10)}T00:00:00${dateStr.substring(10)}`;
+		const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|T|[+-]\d{2}:\d{2}|Z)/.exec(dateStr);
+		if (iso) {
+			return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12);
 		}
 
-		// Attempt to parse as a full ISO 8601 string first, which `new Date()` handles well.
-		// This will correctly handle formats like "2023-10-26T10:00:00+02:00".
-		const isoDate = new Date(processedDateStr);
-		if (!Number.isNaN(isoDate.getTime())) {
-			// Check if the date string contains time or timezone information to avoid misinterpreting YYYY-MM-DD
-			if (processedDateStr.includes('T') || /[-+]\d{2}:\d{2}$/.test(processedDateStr)) {
-				return isoDate;
-			}
-		}
-
-		// Fallback for date-only ISO format (YYYY-MM-DD)
-		if (dateStr.length === 10 && dateStr.includes('-')) {
-			return new Date(`${dateStr}T12:00:00`); // Set time to noon to avoid timezone issues
-		}
-
-		// Parse CAMT date format (YYYYMMDD)
-		if (/^\d{8}$/.test(dateStr)) {
-			const year = parseInt(dateStr.substring(0, 4), 10);
-			const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Month is 0-based
-			const day = parseInt(dateStr.substring(6, 8), 10);
-			return new Date(year, month, day, 12);
+		const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(dateStr);
+		if (compact) {
+			return new Date(Number(compact[1]), Number(compact[2]) - 1, Number(compact[3]), 12);
 		}
 
 		// Anything else used to become `new Date(dateStr)` — an Invalid Date when the

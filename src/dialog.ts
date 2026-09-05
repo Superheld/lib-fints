@@ -10,11 +10,11 @@ import { EndDialogInteraction } from './interactions/endDialogInteraction.js';
 import { InitDialogInteraction } from './interactions/initDialogInteraction.js';
 import { CustomerMessage, CustomerOrderMessage, type Message } from './message.js';
 import { PARTED, type PartedSegment } from './partedSegment.js';
-import type { SegmentWithContinuationMark } from './segment.js';
+import type { Segment, SegmentWithContinuationMark } from './segment.js';
 import { decode } from './segment.js';
 import { HKEND } from './segments/HKEND.js';
 import { HKTAN, type HKTANSegment } from './segments/HKTAN.js';
-import { HNHBK, type HNHBKSegment } from './segments/HNHBK.js';
+import { getSegmentDefinition } from './segments/registry.js';
 
 export class Dialog {
 	dialogId: string = '0';
@@ -25,6 +25,14 @@ export class Dialog {
 	isInitialized = false;
 	hasEnded = false;
 	httpClient: HttpClient;
+	/**
+	 * The order segments of the customer order last sent, kept so a parted response can
+	 * be continued from them. The continuation cannot be built from the message last
+	 * sent: after a TAN that message is the TAN message, which carries HKTAN and not the
+	 * order — and a response the bank splits arrives on exactly that message whenever the
+	 * order needed a TAN, which under PSD2 every statement request beyond 90 days does.
+	 */
+	private currentOrderSegments: Segment[] = [];
 
 	constructor(
 		public config: FinTSConfig,
@@ -104,7 +112,7 @@ export class Dialog {
 		try {
 			do {
 				const responseMessage = await this.httpClient.sendMessage(message);
-				await this.handlePartedMessages(message, responseMessage, this.currentInteraction);
+				await this.handlePartedMessages(responseMessage);
 				const clientResponse = this.currentInteraction.handleClientResponse(responseMessage);
 				this.checkEnded(clientResponse);
 				this.dialogId = clientResponse.dialogId;
@@ -198,18 +206,16 @@ export class Dialog {
 		this.interactions.splice(this.interactions.length - 1, 0, interaction);
 	}
 
-	private createCurrentCustomerMessage(): CustomerMessage {
+	/**
+	 * The message for the current interaction. The order segments are built by the
+	 * interaction unless given — a continuation of a parted response gives the ones
+	 * sent before, with the continuation mark set.
+	 */
+	private createCurrentCustomerMessage(orderSegments?: Segment[]): CustomerMessage {
 		this.lastMessageNumber++;
 
 		const isCustomerOrder = this.currentInteraction instanceof CustomerOrderInteraction;
-		const message = isCustomerOrder
-			? new CustomerOrderMessage(
-					this.currentInteraction.segId,
-					this.currentInteraction.responseSegId,
-					this.dialogId,
-					this.lastMessageNumber,
-				)
-			: new CustomerMessage(this.dialogId, this.lastMessageNumber);
+		const message = this.newMessageForCurrentInteraction();
 
 		const tanMethod = this.config.selectedTanMethod;
 		const isScaSupported = tanMethod && tanMethod.version >= 6;
@@ -234,10 +240,13 @@ export class Dialog {
 			);
 		}
 
-		const segments = this.currentInteraction.getSegments(this.config);
+		const segments = orderSegments ?? this.currentInteraction.getSegments(this.config);
 		segments.forEach((segment) => {
 			message.addSegment(segment);
 		});
+		if (isCustomerOrder) {
+			this.currentOrderSegments = segments;
+		}
 
 		if (this.config.userId && this.config.pin && isTanMethodNeeded) {
 			const hktan: HKTANSegment = {
@@ -255,7 +264,12 @@ export class Dialog {
 
 	private createCurrentTanMessage(tanOrderReference: string, tan?: string): CustomerMessage {
 		this.lastMessageNumber++;
-		const message = new CustomerMessage(this.dialogId, this.lastMessageNumber);
+		// An order message, not a plain one, when a customer order is waiting for the
+		// TAN: the response to this message is the order's response, and the HTTP client
+		// needs to know which segment to hold for continuation. As a plain message the
+		// bank's "more data follows" went unheard, and a caller got the first 100 of 185
+		// transactions as a complete success.
+		const message = this.newMessageForCurrentInteraction();
 
 		if (this.config.userId && this.config.pin) {
 			message.sign(
@@ -284,6 +298,18 @@ export class Dialog {
 			message.addSegment(hktan);
 		}
 		return message;
+	}
+
+	private newMessageForCurrentInteraction(): CustomerMessage {
+		const interaction = this.currentInteraction;
+		return interaction instanceof CustomerOrderInteraction
+			? new CustomerOrderMessage(
+					interaction.segId,
+					interaction.responseSegId,
+					this.dialogId,
+					this.lastMessageNumber,
+				)
+			: new CustomerMessage(this.dialogId, this.lastMessageNumber);
 	}
 
 	private getTanMediaName(): string | undefined {
@@ -315,17 +341,24 @@ export class Dialog {
 	 * payload means — one MT940 stream continues, a list of CAMT documents is appended —
 	 * so that step belongs to the interaction, which does it via `findAllSegments`.
 	 */
-	private async handlePartedMessages(
-		message: CustomerMessage,
-		responseMessage: Message,
-		interaction: CustomerInteraction,
-	) {
+	private async handlePartedMessages(responseMessage: Message) {
+		const interaction = this.currentInteraction;
 		// ALL of them, not just the first: one bank message may well carry several
 		// response segments. Taking only the first left the rest sitting in the tree as
 		// PARTED, where `findAllSegments` cannot see them — lost without a trace.
 		const partedSegments = responseMessage.findAllSegments<PartedSegment>(PARTED.Id);
 
 		if (partedSegments.length === 0) {
+			// Nothing held for continuation — yet the bank says more follows, and the order
+			// is one that can be continued. Returning here left the caller with a partial
+			// list and a success. An order that cannot be continued (HKEKA announces its
+			// next document with 3040 as well) is the interaction's business.
+			if (responseMessage.hasReturnCode(3040) && this.canBeContinued(interaction)) {
+				throw new Error(
+					`The bank announced more data for ${interaction.segId} (code 3040), but no response ` +
+						`segment was held for continuation — the response cannot be completed`,
+				);
+			}
 			return;
 		}
 
@@ -333,31 +366,49 @@ export class Dialog {
 		// the last one we happen to receive.
 		const callersMessage = responseMessage;
 		const rawPortions = partedSegments.map((segment) => segment.rawData);
+		const marksSeen = new Set<string>();
 
 		while (responseMessage.hasReturnCode(3040)) {
-			const answers = responseMessage.getBankAnswers();
-			const segmentWithContinuation = message.segments.find(
-				(s) => s.header.segId === interaction.segId,
-			) as SegmentWithContinuationMark;
-			if (!segmentWithContinuation) {
+			const answer = responseMessage.getBankAnswers().find((a) => a.code === 3040);
+			const mark = answer?.params?.[0];
+			if (!mark) {
+				throw new Error('Expected bank answer to contain continuation mark parameters (code 3040)');
+			}
+			if (marksSeen.has(mark)) {
 				throw new Error(
-					`Response contains segment with further information, but corresponding segment could not be found or is not specified`,
+					`The bank repeated continuation mark '${mark}' — giving up to avoid a loop`,
+				);
+			}
+			marksSeen.add(mark);
+
+			// The continuation is the order again, with the mark — built from the order
+			// segments kept when the order went out, since the message last sent may have
+			// been the TAN message. Signed and, where the order needs one, with HKTAN, as
+			// the first request was.
+			const orderSegment = this.currentOrderSegments.find(
+				(s) => s.header.segId === interaction.segId,
+			) as SegmentWithContinuationMark | undefined;
+			if (!orderSegment) {
+				throw new Error(
+					`The bank announced more data for ${interaction.segId} (code 3040), but the order ` +
+						`segment to continue with is not at hand`,
+				);
+			}
+			orderSegment.continuationMark = mark;
+
+			const nextResponseMessage = await this.httpClient.sendMessage(
+				this.createCurrentCustomerMessage(this.currentOrderSegments),
+			);
+
+			// A TAN demand on a continuation is more than this handles: the portions so far
+			// would have to survive a round trip through the caller. Not silent, though.
+			if ([30, 3955, 3956, 3957].some((code) => nextResponseMessage.hasReturnCode(code))) {
+				throw new Error(
+					`The bank requires a TAN to continue the parted response of ${interaction.segId}; ` +
+						`continuing across a TAN is not supported`,
 				);
 			}
 
-			const answer = answers.find((a) => a.code === 3040);
-
-			if (!answer || !answer.params || answer.params.length === 0) {
-				throw new Error('Expected bank answer to contain continuation mark parameters (code 3040)');
-			}
-
-			segmentWithContinuation.continuationMark = answer.params[0];
-			const hnhbkSegment = message.findSegment<HNHBKSegment>(HNHBK.Id);
-			if (!hnhbkSegment) {
-				throw new Error('HNHBK segment not found in message');
-			}
-			hnhbkSegment.msgNr = ++this.lastMessageNumber;
-			const nextResponseMessage = await this.httpClient.sendMessage(message);
 			rawPortions.push(
 				...nextResponseMessage
 					.findAllSegments<PartedSegment>(PARTED.Id)
@@ -375,6 +426,15 @@ export class Dialog {
 		);
 		withoutPlaceholders.splice(index, 0, ...rawPortions.map((raw) => decode(raw)));
 		callersMessage.segments = withoutPlaceholders;
+	}
+
+	/** Whether the order segment carries a continuation mark, i.e. the bank may split its response. */
+	private canBeContinued(interaction: CustomerInteraction): boolean {
+		return (
+			getSegmentDefinition(interaction.segId)?.elements.some(
+				(element) => element.name === 'continuationMark',
+			) ?? false
+		);
 	}
 
 	private checkEnded(response: ClientResponse) {

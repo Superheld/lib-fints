@@ -19,6 +19,8 @@ npx vitest run -t "interim balances"                # tests whose name matches
 TZ=America/New_York npx vitest run                  # date handling is time-zone sensitive; run this before touching any Date code
 npx biome check <files>            # lint + format check (tabs, 100 cols, single quotes)
 npx biome format --write <files>
+# Biome re-wraps at 100 cols and re-indents with tabs AFTER you write — run it on every file you touch,
+# and expect exact-text matches against a file you edited earlier to fail until you re-read it.
 ```
 
 CI uses pnpm (`pnpm install --frozen-lockfile`, `pnpm run build`); `preprepare` deliberately uses npm so the package builds when installed as a git dependency. Both lock files are present; do not remove either.
@@ -45,6 +47,7 @@ Statement payloads are parsed by `src/mt940parser.ts` (regex tokenizer over the 
 - **A calendar day is a `Date` at local noon.** All three parsers and the `Dat` element decode to 12:00 local; `Dat.encode` uses local getters. This keeps the day stable through `JSON.stringify`. In tests write `new Date('2026-06-01T12:00')` or `new Date(2026, 5, 1)` — never `new Date('2026-06-01')` (UTC midnight, the previous day west of Greenwich).
 - **Absent, not invented.** A field the bank did not send is `undefined` — no zero balances, no `new Date()` for a missing date, no empty list standing in for a failed parse. This goes as far as `Transaction.entryDate`/`valueDate`: a pending CAMT entry may carry no date at all (comdirect does this), and then has none.
 - **Parse errors throw.** MT940/CAMT parsing failures propagate out of `getAccountStatements`; they used to return `success: true, statements: []`, which callers read as "no transactions". (`.github/copilot-instructions.md` still says errors never surface as exceptions — that is out of date.)
+- **Three grades of strictness.** A *record* (booked transactions) that cannot be parsed throws — a caller must not move on past it. A *preview* (noted/pending transactions) that cannot be parsed reports itself on the response (`notedStatementsError`) and leaves its field absent. A *companion* (a balance without amount or date) is simply left out. Never let a companion or a preview take a record down.
 - **Parameter segments:** `bpd.allowedTransactions[].params` are those of the highest version this client supports; versions it cannot decode are kept raw in `unparsedParameters`.
 - **DataElement `maxCount > 1` only as the last element** of a DataGroup or segment — the parser cannot tell where a repeated element ends otherwise.
 - Amounts are `number` (IEEE double). Credit/debit sign is applied in the parsers; `RC` is negative, `RD` positive.
@@ -56,6 +59,8 @@ Statement payloads are parsed by `src/mt940parser.ts` (regex tokenizer over the 
 - Interaction tests call `handleResponse(Message.decode(text), clientResponse)` directly; build the response text from a `HIRMG` answers segment plus the payload segment, binaries as `@len@…`.
 - Dialog/client tests `vi.mock('../httpClient.js')` and `vi.spyOn(interaction, 'handleClientResponse')`; they never mock protocol internals.
 - Mocks that build a `ClientResponse` literal need `as ClientResponse`; ones that omit payload fields are the norm.
+- CAMT fixtures: a minimal camt.052 document is `Document/BkToCstmrAcctRpt/Rpt` with `Id`, `Acct/Id/IBAN` and `Ntry` elements; `Bal` is optional. Version differences the parser must survive: `Sts` as `<Sts><Cd>` (v08) or text (older), parties under `Pty` (v08) or directly, `TxDtls` as an **array** for collective entries.
+- Real-bank findings arrive from the consuming app (Superheld/fints-probe) as issue files; reproduce each as a fixture **invented in the measured shape** — element names and nesting as observed, values made up, never copied. Ask the app agent to read the fixture against the raw XML rather than to build one.
 
 ## Branches
 
@@ -63,3 +68,4 @@ Statement payloads are parsed by `src/mt940parser.ts` (regex tokenizer over the 
 - `workshop` is this fork's integration line. The consuming app pins a `workshop` commit (`github:Superheld/lib-fints#<sha>`).
 - One branch per bug or feature (`fix/…`, `feature/…`), one explanatory commit, merged into `workshop` with `--no-ff -m "Merge: <lowercase summary>"`. Branches are also pushed to `fork` so they can become upstream PRs; for that they must be cherry-picked onto `origin/main`, since they branch from `workshop`.
 - Pure bug fixes are upstream candidates; API changes (optional payloads, throwing parsers, absent balances) are fork decisions — raise an issue upstream first.
+- After each merge, push `workshop` and the branch to `fork` and hand the app the new commit hash as `github:Superheld/lib-fints#<sha>`. Bugs are found by the app running against real banks, not guessed here: wait for its report, fix, let it verify. Its `contracts/*.json` check the dialog, not parser output — they will not reproduce a parser bug.

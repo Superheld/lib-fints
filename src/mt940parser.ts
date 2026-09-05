@@ -43,7 +43,11 @@ const tokens: { [key in TokenType]: RegExp } = {
 	TextToEndOfLine: /^[^\r\n]+/,
 	TextToNextSubTag: /^[^?]+/,
 	TextToNextPurposeTag: /^(.*?)(?=\s[A-Z]{4}\+|$)/,
-	NextNonTagLine: /^\r\n([^:][^\r\n]*)/,
+	// A continuation line of a field is any line that is not the next tag. MT940 wraps
+	// text at 65 characters regardless of content, so a line may well begin with ':' —
+	// rejecting every such line, as this once did, ended the field there and silently
+	// dropped the rest of it, remote name included.
+	NextNonTagLine: /^\r\n(?!:\d\d[A-Z]?:)([^\r\n]+)/,
 	TransactionType: /^[A-Z][0-9A-Z]{3}/,
 	TransactionCode: /^\d{3}/,
 	WhiteSpace: /^\s+/,

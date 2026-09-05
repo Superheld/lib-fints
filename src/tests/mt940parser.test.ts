@@ -309,3 +309,21 @@ describe('isIban', () => {
 		'de04999999980000000003',
 	])('rejects %s', (text) => expect(isIban(text)).toBe(false));
 });
+
+describe('the currency of a transaction', () => {
+	// :61: carries none; the statement's currency on :60F: is the one every line is in.
+	// A caller assuming EUR for a USD account was wrong by the exchange rate, silently.
+	it('is the currency of the opening balance', () => {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			':60F:C260801USD1000,00\r\n' +
+			':61:2608010801DR100,NMSCNONREF\r\n' +
+			':86:166?00CARD PAYMENT\r\n' +
+			':62F:C260801USD900,00\r\n';
+
+		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
+		expect(transaction.currency).toBe('USD');
+	});
+});

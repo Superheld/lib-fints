@@ -61,6 +61,7 @@ Statement payloads are parsed by `src/mt940parser.ts` (regex tokenizer over the 
 - Mocks that build a `ClientResponse` literal need `as ClientResponse`; ones that omit payload fields are the norm.
 - CAMT fixtures: a minimal camt.052 document is `Document/BkToCstmrAcctRpt/Rpt` with `Id`, `Acct/Id/IBAN` and `Ntry` elements; `Bal` is optional. Version differences the parser must survive: `Sts` as `<Sts><Cd>` (v08) or text (older), parties under `Pty` (v08) or directly, `TxDtls` as an **array** for collective entries.
 - Real-bank findings arrive from the consuming app (Superheld/fints-probe) as issue files; reproduce each as a fixture **invented in the measured shape** — element names and nesting as observed, values made up, never copied. Ask the app agent to read the fixture against the raw XML rather than to build one.
+- When counting what a bank sends in a CAMT document, count the leaves (`IBAN`, `Nm`, `Ustrd`), not the containers: comdirect sends `<CdtrAcct><Id/></CdtrAcct>` in bulk, and a count of `CdtrAcct` reads as "171 counterparty accounts sent, 17 parsed" when 154 of them are empty one level down. The present container and the missing identifier have different names, so a count keyed on the outer one never sees the gap.
 
 ## Branches
 

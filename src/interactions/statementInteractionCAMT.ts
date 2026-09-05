@@ -63,9 +63,15 @@ export class StatementInteractionCAMT extends CustomerOrderInteraction {
 		clientResponse.statements = parseCamtDocuments(booked);
 
 		// The second field of HICAZ — a complete CAMT document of the pending entries,
-		// sent alongside the first and until now never read.
+		// sent alongside the first and until now never read. Its failure must not take
+		// the booked statements with it; see `notedStatementsError`.
 		if (noted.length > 0) {
-			clientResponse.notedStatements = parseCamtDocuments(noted);
+			try {
+				clientResponse.notedStatements = parseCamtDocuments(noted);
+			} catch (error) {
+				clientResponse.notedStatementsError =
+					error instanceof Error ? error : new Error(String(error));
+			}
 		}
 	}
 }

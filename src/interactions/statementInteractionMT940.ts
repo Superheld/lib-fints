@@ -63,8 +63,14 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 			: [];
 
 		// The second field of HIKAZ, sent alongside the first and until now never read.
+		// Its failure must not take the booked statements with it; see `notedStatementsError`.
 		if (notedTransactions) {
-			clientResponse.notedStatements = new Mt940Parser(notedTransactions).parse();
+			try {
+				clientResponse.notedStatements = new Mt940Parser(notedTransactions).parse();
+			} catch (error) {
+				clientResponse.notedStatementsError =
+					error instanceof Error ? error : new Error(String(error));
+			}
 		}
 	}
 }

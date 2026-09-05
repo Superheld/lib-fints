@@ -451,7 +451,7 @@ export class CamtParser {
 
 		for (let i = 0; i < entryArray.length; i++) {
 			try {
-				const transaction = this.parseTransaction(entryArray[i]);
+				const transaction = this.parseTransaction(entryArray[i], i + 1);
 				if (transaction) {
 					transactions.push(transaction);
 				}
@@ -468,7 +468,7 @@ export class CamtParser {
 		return transactions;
 	}
 
-	private parseTransaction(entry: CamtEntry): Transaction | null {
+	private parseTransaction(entry: CamtEntry, entryNumber: number): Transaction | null {
 		try {
 			// Extract amount and credit/debit indicator
 			const amountValue = parseFloat(this.getValueFromPath(entry, 'Amt') || '0');
@@ -492,8 +492,12 @@ export class CamtParser {
 			// date, which gave every pending entry the day it was fetched as the day it
 			// was booked.
 			if (!bookingDate && !valueDate) {
+				// Naming the elements the entry does have is the one clue a log can give as
+				// to where this bank puts the dates instead — one such entry was seen with
+				// neither, and without the raw XML that is all there is to go on.
 				throw new CamtParsingError(
-					`Entry ${this.accountServicerRefOf(entry)} has neither a booking nor a value date`,
+					`Entry ${entryNumber} (${this.accountServicerRefOf(entry)}) has neither a booking ` +
+						`nor a value date; its elements are: ${Object.keys(entry).join(', ')}`,
 				);
 			}
 			const entryDate = this.parseDate(bookingDate ?? (valueDate as string));

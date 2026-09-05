@@ -52,6 +52,16 @@ export interface StatementResponse extends ClientResponse {
 	 * them.
 	 */
 	notedStatements?: Statement[];
+	/**
+	 * Why `notedStatements` is absent although the bank sent noted transactions: the
+	 * document could not be parsed. Kept apart from the booked statements on purpose.
+	 * A booked statement that cannot be parsed fails the call — a caller fetching
+	 * incrementally would otherwise move on past bookings it never saw. A noted one
+	 * is a preview, not a record; what it shows, the next fetch delivers as a
+	 * booked line. Dropping it loses nothing, failing the call would lose the
+	 * booked statements parsed a moment before.
+	 */
+	notedStatementsError?: Error;
 }
 
 export abstract class CustomerInteraction {

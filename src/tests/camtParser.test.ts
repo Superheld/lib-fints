@@ -1167,7 +1167,9 @@ describe('CamtParser — dates the bank did not send', () => {
 	it('refuses an entry with neither a booking nor a value date', () => {
 		expect(() =>
 			new CamtParser(report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry(''))).parse(),
-		).toThrow(/Entry REF1 has neither a booking nor a value date/);
+		).toThrow(
+			/Entry 1 \(REF1\) has neither a booking nor a value date; its elements are: Amt, CdtDbtInd, Sts, AcctSvcrRef/,
+		);
 	});
 
 	it('reads a balance date stated as a date-time', () => {

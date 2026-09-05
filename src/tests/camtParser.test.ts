@@ -168,11 +168,11 @@ describe('CamtParser', () => {
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('CRDT'); // Credit/debit indicator
 		expect(transaction.transactionType).toBe(''); // Should be empty as no family code in BkTxCd
-		expect(transaction.transactionCode).toBe(''); // Parser only handles structured BkTxCd, not Prtry format
+		expect(transaction.transactionCode).toBeUndefined(); // Parser only handles structured BkTxCd, not Prtry format
 
 		// Check additional information fields
-		expect(transaction.additionalInformation).toBe(''); // No AddtlNtryInf in this test
-		expect(transaction.bookingText).toBe(''); // Should match additionalInformation
+		expect(transaction.additionalInformation).toBeUndefined(); // No AddtlNtryInf in this test
+		expect(transaction.bookingText).toBeUndefined(); // Should match additionalInformation
 
 		// Verify optional fields not set in this test
 		expect(transaction.primeNotesNr).toBeUndefined();
@@ -283,7 +283,7 @@ describe('CamtParser', () => {
 		expect(transaction.customerReference).toBe('485315597247918');
 		expect(transaction.bankReference).toBe('TXN002');
 		expect(transaction.e2eReference).toBe('485315597247918');
-		expect(transaction.mandateReference).toBe(''); // No MndtId in this test
+		expect(transaction.mandateReference).toBeUndefined(); // No MndtId in this test
 
 		// Date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
@@ -294,7 +294,7 @@ describe('CamtParser', () => {
 		// Transaction type indicators
 		expect(transaction.fundsCode).toBe('DBIT'); // Debit indicator
 		expect(transaction.transactionType).toBe(''); // No family code
-		expect(transaction.transactionCode).toBe(''); // No BkTxCd in this test
+		expect(transaction.transactionCode).toBeUndefined(); // No BkTxCd in this test
 
 		// Additional info fields
 		expect(transaction.additionalInformation).toBe('Additional Info');
@@ -615,12 +615,12 @@ describe('CamtParser', () => {
 		expect(transaction.amount).toBe(1000.0);
 		expect(transaction.customerReference).toBe(''); // Empty EndToEndId
 		expect(transaction.bankReference).toBe(''); // Empty AcctSvcrRef
-		expect(transaction.purpose).toBe(''); // Empty Ustrd
-		expect(transaction.remoteName).toBe(''); // Empty Nm
-		expect(transaction.remoteAccountNumber).toBe(''); // No IBAN provided
-		expect(transaction.remoteBankId).toBe(''); // No BIC provided
-		expect(transaction.e2eReference).toBe(''); // Empty EndToEndId
-		expect(transaction.mandateReference).toBe(''); // No MndtId
+		expect(transaction.purpose).toBeUndefined(); // Empty Ustrd
+		expect(transaction.remoteName).toBeUndefined(); // Empty Nm
+		expect(transaction.remoteAccountNumber).toBeUndefined(); // No IBAN provided
+		expect(transaction.remoteBankId).toBeUndefined(); // No BIC provided
+		expect(transaction.e2eReference).toBeUndefined(); // Empty EndToEndId
+		expect(transaction.mandateReference).toBeUndefined(); // No MndtId
 
 		// Test date parsing consistency
 		expect(transaction.valueDate.getDate()).toBe(21); // Different from entry date
@@ -629,10 +629,10 @@ describe('CamtParser', () => {
 		// Test transaction type fields with no BkTxCd
 		expect(transaction.fundsCode).toBe('CRDT');
 		expect(transaction.transactionType).toBe('');
-		expect(transaction.transactionCode).toBe('');
+		expect(transaction.transactionCode).toBeUndefined();
 
-		expect(transaction.additionalInformation).toBe('');
-		expect(transaction.bookingText).toBe('');
+		expect(transaction.additionalInformation).toBeUndefined();
+		expect(transaction.bookingText).toBeUndefined();
 	});
 
 	it('should handle party structure variations in XML (Dbtr.Pty.Nm format)', () => {
@@ -1036,9 +1036,9 @@ describe('CamtParser', () => {
 			'028-1234567-XXXXXXX Amazon.de 2ABCD\nEF9GFP28\nEnd-to-End-Ref.:\n2ABCDEF9GHIJKL28\nCORE / Mandatsref.:\n7829857lkklag\nGläubiger-ID:\nDE24ABC00000123456',
 		);
 		expect(transaction.remoteName).toBe('AMAZON EU S.A R.L., NIEDERL ASSUNG DEUTSCHLAND');
-		expect(transaction.remoteAccountNumber).toBe('');
-		expect(transaction.remoteBankId).toBe('');
-		expect(transaction.e2eReference).toBe('');
+		expect(transaction.remoteAccountNumber).toBeUndefined();
+		expect(transaction.remoteBankId).toBeUndefined();
+		expect(transaction.e2eReference).toBeUndefined();
 
 		// Check date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
@@ -1053,11 +1053,11 @@ describe('CamtParser', () => {
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('DBIT');
 		expect(transaction.transactionType).toBe('');
-		expect(transaction.transactionCode).toBe('');
+		expect(transaction.transactionCode).toBeUndefined();
 
 		// Check additional information fields
-		expect(transaction.additionalInformation).toBe('');
-		expect(transaction.bookingText).toBe(''); // Should match additionalInformation
+		expect(transaction.additionalInformation).toBeUndefined();
+		expect(transaction.bookingText).toBeUndefined(); // Should match additionalInformation
 
 		// Verify optional fields not set in this test
 		expect(transaction.primeNotesNr).toBeUndefined();
@@ -1120,14 +1120,14 @@ describe('CamtParser — purpose code and ultimate party', () => {
 		expect(transaction.ultimateParty).toBe('Buchhandlung Talmberg');
 	});
 
-	it('leaves both empty when the bank states neither', () => {
+	it('leaves both absent when the bank states neither', () => {
 		const ohne = xml
 			.replace('<UltmtCdtr><Nm>Buchhandlung Talmberg</Nm></UltmtCdtr>', '')
 			.replace('<Purp><Cd>SALA</Cd></Purp>', '');
 		const transaction = new CamtParser(ohne).parse()[0].transactions[0];
 
-		expect(transaction.purposeCode).toBe('');
-		expect(transaction.ultimateParty).toBe('');
+		expect(transaction.purposeCode).toBeUndefined();
+		expect(transaction.ultimateParty).toBeUndefined();
 		expect(transaction.remoteName).toBe('Zahlungsdienstleister');
 	});
 
@@ -1427,9 +1427,9 @@ describe('CamtParser — collective entries and the remaining elements', () => {
 
 		expect(payroll.amount).toBe(-6000);
 		expect(payroll.batch?.numberOfTransactions).toBe(3);
-		// No single counterparty for the entry: the party fields stay empty …
-		expect(payroll.remoteName).toBe('');
-		expect(payroll.e2eReference).toBe('');
+		// No single counterparty for the entry: the party fields are absent …
+		expect(payroll.remoteName).toBeUndefined();
+		expect(payroll.e2eReference).toBeUndefined();
 		// … and the payments are here.
 		expect(payroll.details).toHaveLength(3);
 		expect(payroll.details?.[1]).toMatchObject({

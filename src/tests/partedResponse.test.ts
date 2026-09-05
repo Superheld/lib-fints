@@ -97,8 +97,10 @@ describe('parted responses (bank answer code 3040)', () => {
 		(dialog as any).currentOrderSegments = request.segments.filter(
 			(s) => s.header.segId === HKCAZ.Id,
 		);
+		dialog.addCustomerInteraction(interaction);
+		dialog.currentInteractionIndex = 1;
 		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
-		await (dialog as any).handlePartedMessages(first, interaction);
+		await (dialog as any).handlePartedMessages(first);
 
 		// The continuation is the order again, with the mark — and an ORDER message, so
 		// the HTTP client holds the response segment for the next round.
@@ -136,8 +138,10 @@ describe('parted responses (bank answer code 3040)', () => {
 		(dialog as any).currentOrderSegments = request.segments.filter(
 			(s) => s.header.segId === HKCAZ.Id,
 		);
+		dialog.addCustomerInteraction(interaction);
+		dialog.currentInteractionIndex = 1;
 		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
-		await (dialog as any).handlePartedMessages(only, interaction);
+		await (dialog as any).handlePartedMessages(only);
 
 		expect(dialog.httpClient.sendMessage).not.toHaveBeenCalled();
 		const segments = only.findAllSegments<HICAZSegment>(HICAZ.Id);
@@ -228,8 +232,10 @@ describe('several response segments in one bank message', () => {
 		(dialog as any).currentOrderSegments = request.segments.filter(
 			(s) => s.header.segId === HKCAZ.Id,
 		);
+		dialog.addCustomerInteraction(new StatementInteractionCAMT('123'));
+		dialog.currentInteractionIndex = 1;
 		// biome-ignore lint/suspicious/noExplicitAny: private Sammelroutine, absichtlich
-		await (dialog as any).handlePartedMessages(message, new StatementInteractionCAMT('123'));
+		await (dialog as any).handlePartedMessages(message);
 
 		expect(message.findAllSegments('PARTED')).toHaveLength(0);
 		const segments = message.findAllSegments<HICAZSegment>(HICAZ.Id);

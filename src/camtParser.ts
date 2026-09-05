@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import type { Balance, Money, Statement, Transaction } from './statement.js';
+import type { Balance, Money, Statement, Transaction, TransactionDetail } from './statement.js';
 
 // Type definitions for CAMT XML structure
 type GenericXMLObject = Record<string, unknown>;
@@ -73,7 +73,8 @@ interface CamtEntry extends GenericXMLObject {
 	BkTxCd?: CamtBankTransactionCode;
 	NtryDtls?: {
 		Btch?: GenericXMLObject;
-		TxDtls?: CamtTransactionDetails;
+		// One object for a single payment, an array for a collective entry.
+		TxDtls?: CamtTransactionDetails | CamtTransactionDetails[];
 	};
 }
 
@@ -147,6 +148,10 @@ interface CamtBankTransactionCode extends GenericXMLObject {
 			Cd?: string | { '#text': string };
 			SubFmlyCd?: string | { '#text': string };
 		};
+	};
+	Prtry?: {
+		Cd?: string | { '#text': string };
+		Issr?: string | { '#text': string };
 	};
 }
 
@@ -503,54 +508,27 @@ export class CamtParser {
 			const entryDate = this.parseDate(entryDateStr);
 			const parsedValueDate = valueDate ? this.parseDate(valueDate) : entryDate;
 
-			// Extract references
 			const accountServicerRef = this.getValueFromPath(entry, 'AcctSvcrRef') || '';
-			const endToEndId = this.getValueFromPath(entry, 'NtryDtls.TxDtls.Refs.EndToEndId') || '';
-			const mandateId = this.getValueFromPath(entry, 'NtryDtls.TxDtls.Refs.MndtId') || '';
-
-			// Extract transaction details
+			const entryReference = this.getValueFromPath(entry, 'NtryRef') || undefined;
 			const additionalEntryInfo = this.getValueFromPath(entry, 'AddtlNtryInf') || '';
-			const remittanceInfo = this.getValueFromPath(entry, 'NtryDtls.TxDtls.RmtInf.Ustrd') || '';
 
-			// Extract remote party information based on transaction type
-			let remoteName = '';
-			let remoteIBAN = '';
-			let remoteBankId = '';
-			let ultimateParty = '';
-
-			const txDtls = entry.NtryDtls?.TxDtls;
-			if (txDtls) {
-				if (isDebit) {
-					// For debit transactions, we want the creditor (receiving party)
-					remoteName = this.extractPartyName(txDtls, 'RltdPties.Cdtr');
-					remoteIBAN = this.getValueFromPath(txDtls, 'RltdPties.CdtrAcct.Id.IBAN') || '';
-					remoteBankId = this.extractBankId(txDtls, 'RltdAgts.CdtrAgt.FinInstnId');
-					// The party the money is ultimately for. Where a payment service provider
-					// sits in between, the creditor above is the provider and this is the
-					// merchant behind it.
-					ultimateParty = this.extractPartyName(txDtls, 'RltdPties.UltmtCdtr');
-				} else {
-					// For credit transactions, we want the debtor (sending party)
-					remoteName = this.extractPartyName(txDtls, 'RltdPties.Dbtr');
-					remoteIBAN = this.getValueFromPath(txDtls, 'RltdPties.DbtrAcct.Id.IBAN') || '';
-					remoteBankId = this.extractBankId(txDtls, 'RltdAgts.DbtrAgt.FinInstnId');
-					ultimateParty = this.extractPartyName(txDtls, 'RltdPties.UltmtDbtr');
-				}
-			}
-
-			// SEPA purpose code (SALA, RENT, LOAN, …) — a classification the bank already
-			// made. It sits at transaction level; some institutes state it structured
-			// (`Purp.Cd`), others as their own text (`Purp.Prtry`).
-			const purposeCode = txDtls
-				? this.getValueFromPath(txDtls, 'Purp.Cd') ||
-					this.getValueFromPath(txDtls, 'Purp.Prtry') ||
-					''
-				: '';
+			// One set of transaction details for a single payment; several for a
+			// collective entry — a payroll, a direct-debit run — booked as one entry with
+			// the total. The XML parser hands over an object for one and an array for
+			// several, and every `getValueFromPath` into an array came back undefined: a
+			// collective entry lost every detail it had. Each payment is read on its own
+			// now; a single one lands on the transaction, several in `details`.
+			const rawDetails = entry.NtryDtls?.TxDtls;
+			const allDetails = (
+				rawDetails === undefined ? [] : Array.isArray(rawDetails) ? rawDetails : [rawDetails]
+			).map((txDtls) => this.parseTransactionDetail(txDtls, isDebit));
+			const single = allDetails.length === 1 ? allDetails[0] : undefined;
+			const firstDetails = Array.isArray(rawDetails) ? rawDetails[0] : rawDetails;
 
 			// Extract bank transaction code structure (BkTxCd) - can be at entry level or TxDtls level
 			let bkTxCd = this.parseBankTransactionCode(entry);
-			if (!bkTxCd.domainCode && !bkTxCd.familyCode && !bkTxCd.subFamilyCode && txDtls) {
-				bkTxCd = this.parseBankTransactionCode(txDtls);
+			if (!bkTxCd.domainCode && !bkTxCd.familyCode && !bkTxCd.subFamilyCode && firstDetails) {
+				bkTxCd = this.parseBankTransactionCode(firstDetails);
 			}
 
 			// Booked, pending or informational. Stated as a code element since
@@ -564,21 +542,14 @@ export class CamtParser {
 			const reversalIndicator = this.getValueFromPath(entry, 'RvslInd');
 			const isReversal = reversalIndicator === undefined ? undefined : reversalIndicator === 'true';
 
-			// Charges, amount details and the return reason sit on the entry or on its
-			// transaction details, depending on the bank; the entry is looked at first.
-			const charges = this.parseCharges(entry) ?? (txDtls ? this.parseCharges(txDtls) : undefined);
+			// Charges and amount details sit on the entry or on its transaction details,
+			// depending on the bank; the entry is looked at first.
+			const charges =
+				this.parseCharges(entry) ?? (firstDetails ? this.parseCharges(firstDetails) : undefined);
 			const amountDetails =
-				this.parseAmountDetails(entry) ?? (txDtls ? this.parseAmountDetails(txDtls) : undefined);
-			const returnReason = txDtls ? this.parseReturnReason(txDtls) : undefined;
+				this.parseAmountDetails(entry) ??
+				(firstDetails ? this.parseAmountDetails(firstDetails) : undefined);
 			const batch = this.parseBatch(entry);
-
-			// The identifier of the other party, where the bank states one: on a direct
-			// debit the creditor identifier that goes with the mandate, on a credit
-			// whatever the debtor's bank sent. The same field MT940 fills from
-			// `CRED+` and `DEBT+`.
-			const remoteIdentifier = txDtls
-				? this.extractPartyIdentifier(txDtls, isDebit ? 'RltdPties.Cdtr' : 'RltdPties.Dbtr')
-				: '';
 
 			return {
 				valueDate: parsedValueDate,
@@ -586,31 +557,36 @@ export class CamtParser {
 				fundsCode: bkTxCd.domainCode || creditDebitInd || '',
 				amount,
 				transactionType: bkTxCd.familyCode || '',
-				customerReference: endToEndId,
+				customerReference: single?.e2eReference ?? '',
 				bankReference: accountServicerRef,
 				transactionCode: bkTxCd.subFamilyCode || '',
-				purpose: remittanceInfo,
-				remoteName,
-				remoteAccountNumber: remoteIBAN,
-				remoteBankId,
-				e2eReference: endToEndId,
-				mandateReference: mandateId,
+				purpose: single?.purpose ?? '',
+				remoteName: single?.remoteName ?? '',
+				remoteAccountNumber: single?.remoteIban ?? '',
+				remoteBankId: single?.remoteBankId ?? '',
+				e2eReference: single?.e2eReference ?? '',
+				mandateReference: single?.mandateReference ?? '',
 				additionalInformation: additionalEntryInfo,
 				bookingText: additionalEntryInfo,
 				// Stated separately from `remoteAccountNumber` so a caller can tell an IBAN
 				// from whatever the format happened to offer — MT940 puts the legacy account
 				// number in that field.
-				remoteIban: remoteIBAN,
-				purposeCode,
-				ultimateParty,
+				remoteIban: single?.remoteIban ?? '',
+				purposeCode: single?.purposeCode ?? '',
+				ultimateParty: single?.ultimateParty ?? '',
 				status,
 				isReversal,
 				charges,
 				originalAmount: amountDetails?.originalAmount,
 				exchangeRate: amountDetails?.exchangeRate,
-				returnReason,
+				returnReason: single?.returnReason,
 				batch,
-				remoteIdentifier: remoteIdentifier || undefined,
+				remoteIdentifier: single?.remoteIdentifier,
+				details: allDetails.length > 1 ? allDetails : undefined,
+				entryReference,
+				transactionId: single?.transactionId,
+				proprietaryCode: bkTxCd.proprietaryCode,
+				creditorReference: single?.creditorReference,
 			};
 		} catch (error) {
 			throw new CamtParsingError(
@@ -618,6 +594,62 @@ export class CamtParser {
 				error instanceof Error ? error : undefined,
 			);
 		}
+	}
+
+	/**
+	 * One payment as its transaction details describe it. `isDebit` is the entry's
+	 * direction and decides which party is the remote one; a payment's own direction,
+	 * where stated, decides the sign of its amount.
+	 */
+	private parseTransactionDetail(
+		txDtls: CamtTransactionDetails,
+		isDebit: boolean,
+	): TransactionDetail {
+		const ownDirection = this.getValueFromPath(txDtls, 'CdtDbtInd');
+		const paymentIsDebit = ownDirection ? ownDirection === 'DBIT' : isDebit;
+		const money = this.moneyAt(txDtls, 'Amt') ?? this.moneyAt(txDtls, 'AmtDtls.TxAmt.Amt');
+		const amount = money
+			? { value: paymentIsDebit ? -money.value : money.value, currency: money.currency }
+			: undefined;
+
+		// For a debit the creditor is the remote party, for a credit the debtor. The
+		// party the money is ultimately for sits alongside: where a payment service
+		// provider is in between, the direct party is the provider, this the merchant.
+		const [party, account, agent, ultimate] = isDebit
+			? ['RltdPties.Cdtr', 'RltdPties.CdtrAcct', 'RltdAgts.CdtrAgt', 'RltdPties.UltmtCdtr']
+			: ['RltdPties.Dbtr', 'RltdPties.DbtrAcct', 'RltdAgts.DbtrAgt', 'RltdPties.UltmtDbtr'];
+
+		// Free text (`Ustrd`, possibly several) or, failing that, the additional text of
+		// a structured remittance. A structured creditor reference — an RF reference,
+		// say — is kept as such; it is not free text.
+		const unstructured = this.getValueFromPath(txDtls, 'RmtInf.Ustrd');
+		const additional = this.getValueFromPath(txDtls, 'RmtInf.Strd.AddtlRmtInf');
+
+		const detail: TransactionDetail = {
+			amount,
+			remoteName: this.extractPartyName(txDtls, party) || undefined,
+			remoteIban: this.getValueFromPath(txDtls, `${account}.Id.IBAN`) || undefined,
+			remoteBankId: this.extractBankId(txDtls, `${agent}.FinInstnId`) || undefined,
+			// The identifier of the remote party, where the bank states one: on a direct
+			// debit the creditor identifier that goes with the mandate. The same field
+			// MT940 fills from `CRED+` and `DEBT+`.
+			remoteIdentifier: this.extractPartyIdentifier(txDtls, party) || undefined,
+			ultimateParty: this.extractPartyName(txDtls, ultimate) || undefined,
+			e2eReference: this.getValueFromPath(txDtls, 'Refs.EndToEndId') || undefined,
+			mandateReference: this.getValueFromPath(txDtls, 'Refs.MndtId') || undefined,
+			transactionId: this.getValueFromPath(txDtls, 'Refs.TxId') || undefined,
+			purpose: unstructured || additional || undefined,
+			// SEPA purpose code (SALA, RENT, LOAN, …) — a classification the bank already
+			// made; some institutes state it structured (`Purp.Cd`), others as their own
+			// text (`Purp.Prtry`).
+			purposeCode:
+				this.getValueFromPath(txDtls, 'Purp.Cd') ||
+				this.getValueFromPath(txDtls, 'Purp.Prtry') ||
+				undefined,
+			creditorReference: this.getValueFromPath(txDtls, 'RmtInf.Strd.CdtrRefInf.Ref') || undefined,
+			returnReason: this.parseReturnReason(txDtls),
+		};
+		return detail;
 	}
 
 	/**
@@ -886,11 +918,16 @@ export class CamtParser {
 		domainCode?: string;
 		familyCode?: string;
 		subFamilyCode?: string;
+		proprietaryCode?: string;
 	} {
 		const bkTxCd = entry.BkTxCd;
 		if (!bkTxCd) {
 			return {};
 		}
+
+		// The bank's own code alongside the ISO domain/family — German banks put the
+		// SWIFT type and Geschäftsvorfallcode here, `NTRF+117`.
+		const proprietaryCode = this.getValueFromPath(bkTxCd, 'Prtry.Cd');
 
 		// Extract Domain Code (first level - e.g., "PMNT")
 		const domainCode = this.getValueFromPath(bkTxCd, 'Domn.Cd');
@@ -905,6 +942,7 @@ export class CamtParser {
 			domainCode,
 			familyCode,
 			subFamilyCode,
+			proprietaryCode,
 		};
 	}
 }

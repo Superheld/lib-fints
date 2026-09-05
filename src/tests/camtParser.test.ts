@@ -1398,3 +1398,89 @@ describe('CamtParser — figures the bank left incomplete', () => {
 		).toThrow(/Cannot read the date '01.07.2026'/);
 	});
 });
+
+describe('CamtParser — collective entries and the remaining elements', () => {
+	const report = (entries: string) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`${entries}</Rpt></BkToCstmrAcctRpt></Document>`;
+	const parse = (entries: string) => new CamtParser(report(entries)).parse()[0].transactions;
+
+	const payment = (name: string, iban: string, amount: string, e2e: string) =>
+		`<TxDtls><Refs><EndToEndId>${e2e}</EndToEndId><TxId>TX-${e2e}</TxId></Refs>` +
+		`<Amt Ccy="EUR">${amount}</Amt><CdtDbtInd>DBIT</CdtDbtInd>` +
+		`<RltdPties><Cdtr><Pty><Nm>${name}</Nm></Pty></Cdtr><CdtrAcct><Id><IBAN>${iban}</IBAN></Id></CdtrAcct></RltdPties>` +
+		`<RmtInf><Ustrd>Gehalt ${name}</Ustrd></RmtInf></TxDtls>`;
+
+	it('reads every payment of a collective entry into details', () => {
+		// A payroll: one entry with the total, three payments behind it. Every detail
+		// of such an entry used to be lost — the parser looked for fields on the array.
+		const [payroll] = parse(
+			`<Ntry><NtryRef>NR-1</NtryRef><Amt Ccy="EUR">6000.00</Amt><CdtDbtInd>DBIT</CdtDbtInd>` +
+				`<BookgDt><Dt>2026-07-31</Dt></BookgDt><AddtlNtryInf>SAMMELUEBERWEISUNG</AddtlNtryInf>` +
+				`<NtryDtls><Btch><NbOfTxs>3</NbOfTxs></Btch>` +
+				payment('Anna', 'DE11', '2000.00', 'E1') +
+				payment('Ben', 'DE22', '2500.00', 'E2') +
+				payment('Cara', 'DE33', '1500.00', 'E3') +
+				`</NtryDtls></Ntry>`,
+		);
+
+		expect(payroll.amount).toBe(-6000);
+		expect(payroll.batch?.numberOfTransactions).toBe(3);
+		// No single counterparty for the entry: the party fields stay empty …
+		expect(payroll.remoteName).toBe('');
+		expect(payroll.e2eReference).toBe('');
+		// … and the payments are here.
+		expect(payroll.details).toHaveLength(3);
+		expect(payroll.details?.[1]).toMatchObject({
+			amount: { value: -2500, currency: 'EUR' },
+			remoteName: 'Ben',
+			remoteIban: 'DE22',
+			e2eReference: 'E2',
+			transactionId: 'TX-E2',
+			purpose: 'Gehalt Ben',
+		});
+		expect(payroll.entryReference).toBe('NR-1');
+	});
+
+	it('keeps a single payment on the transaction itself, without details', () => {
+		const [single] = parse(
+			`<Ntry><Amt Ccy="EUR">2000.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-31</Dt></BookgDt>` +
+				`<NtryDtls>${payment('Anna', 'DE11', '2000.00', 'E1')}</NtryDtls></Ntry>`,
+		);
+		expect(single.remoteName).toBe('Anna');
+		expect(single.e2eReference).toBe('E1');
+		expect(single.transactionId).toBe('TX-E1');
+		expect(single.details).toBeUndefined();
+	});
+
+	it('reads the proprietary bank transaction code', () => {
+		const [t] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<BkTxCd><Domn><Cd>PMNT</Cd><Fmly><Cd>ICDT</Cd><SubFmlyCd>ESCT</SubFmlyCd></Fmly></Domn>` +
+				`<Prtry><Cd>NTRF+117</Cd><Issr>DK</Issr></Prtry></BkTxCd></Ntry>`,
+		);
+		expect(t.fundsCode).toBe('PMNT');
+		expect(t.transactionType).toBe('ICDT');
+		expect(t.transactionCode).toBe('ESCT');
+		expect(t.proprietaryCode).toBe('NTRF+117');
+	});
+
+	it('reads a structured remittance: the creditor reference as such, the additional text as purpose', () => {
+		const [t] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><TxDtls><RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Cd>SCOR</Cd></CdOrPrtry></Tp>` +
+				`<Ref>RF18539007547034</Ref></CdtrRefInf><AddtlRmtInf>Rechnung 4711</AddtlRmtInf></Strd></RmtInf></TxDtls></NtryDtls></Ntry>`,
+		);
+		expect(t.creditorReference).toBe('RF18539007547034');
+		expect(t.purpose).toBe('Rechnung 4711');
+	});
+
+	it('prefers the free text over the structured additional text for the purpose', () => {
+		const [t] = parse(
+			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt>` +
+				`<NtryDtls><TxDtls><RmtInf><Ustrd>Miete</Ustrd><Strd><AddtlRmtInf>ignored</AddtlRmtInf></Strd></RmtInf></TxDtls></NtryDtls></Ntry>`,
+		);
+		expect(t.purpose).toBe('Miete');
+	});
+});

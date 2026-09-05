@@ -23,6 +23,7 @@ export { CreditCardStatementInteraction } from './interactions/creditcardStateme
 export {
 	ClientResponse,
 	CustomerOrderInteraction,
+	AccountStatementFormat,
 	StatementResponse,
 } from './interactions/customerInteraction.js';
 export {
@@ -31,7 +32,10 @@ export {
 	ElectronicStatementResponse,
 } from './interactions/electronicStatementInteraction.js';
 export { PortfolioInteraction, PortfolioResponse } from './interactions/portfolioInteraction.js';
-export { SepaAccountInteraction, SepaAccountResponse } from './interactions/sepaAccountInteraction.js';
+export {
+	SepaAccountInteraction,
+	SepaAccountResponse,
+} from './interactions/sepaAccountInteraction.js';
 export { StatementInteractionCAMT } from './interactions/statementInteractionCAMT.js';
 export { StatementInteractionMT940 } from './interactions/statementInteractionMT940.js';
 export * from './message.js';

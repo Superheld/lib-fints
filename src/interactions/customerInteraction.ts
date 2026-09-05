@@ -42,8 +42,26 @@ export interface ClientResponse {
  * which would read as "no transactions in this period".
  */
 export interface StatementResponse extends ClientResponse {
+	/**
+	 * Which format the statements were parsed from. `getAccountStatements` picks the
+	 * format from what the bank offers for the account and falls back to MT940 when
+	 * there is no CAMT — the caller cannot tell which branch ran, and the two put
+	 * different vocabularies into `transactionCode` and `bookingText` (the numeric
+	 * business transaction code and a short label from MT940; the ISO sub-family code
+	 * and the free-text entry information from CAMT). Set by the interaction that did
+	 * the parsing, present whenever `statements` is.
+	 */
+	format?: AccountStatementFormat;
 	/** The booked transactions, as statements. */
 	statements?: Statement[];
+	/**
+	 * The text `statements` was parsed from, as the bank sent it: the CAMT documents
+	 * (one per booking day, decoded to a readable string) or the one MT940 stream. A
+	 * field the parser leaves empty can mean two things — the bank did not send it, or
+	 * the parser did not read it — and only the raw text tells them apart. These are
+	 * the same strings the decoded message already holds, not a copy.
+	 */
+	rawStatements?: string[];
 	/**
 	 * The transactions the bank has noted but not booked yet — pending ones — where
 	 * the bank sends them. Kept apart from `statements`: a caller that counts these
@@ -62,7 +80,19 @@ export interface StatementResponse extends ClientResponse {
 	 * booked statements parsed a moment before.
 	 */
 	notedStatementsError?: Error;
+	/**
+	 * The text the noted transactions came in, like `rawStatements`. Present whenever
+	 * the bank sent noted transactions — also when parsing them failed, so that what
+	 * `notedStatementsError` complains about can be looked at.
+	 */
+	rawNotedStatements?: string[];
 }
+
+/**
+ * The format an account statement arrived in; see `StatementResponse.format`. (Not the
+ * `StatementFormat` of HKEKA, which names the file formats of electronic statements.)
+ */
+export type AccountStatementFormat = 'CAMT' | 'MT940';
 
 export abstract class CustomerInteraction {
 	dialog?: Dialog;

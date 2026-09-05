@@ -53,6 +53,12 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 			.filter((noted) => !!noted)
 			.join('');
 
+		clientResponse.format = 'MT940';
+		clientResponse.rawStatements = [bookedTransactions];
+		if (notedTransactions) {
+			clientResponse.rawNotedStatements = [notedTransactions];
+		}
+
 		// A parse error propagates. Catching it and answering with an empty list — as
 		// this once did — turned a broken statement into "success, no transactions":
 		// a caller fetching incrementally moved on, and the bookings were gone with

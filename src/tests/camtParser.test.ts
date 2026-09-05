@@ -1364,6 +1364,39 @@ describe('CamtParser — what else an entry states', () => {
 		expect(direct.remoteName).toBe('Stadtwerke');
 	});
 
+	// The references of `Refs` beyond EndToEndId, MndtId and TxId, and the type of a
+	// structured creditor reference. None was read; comdirect sends none of them, so
+	// the shapes are the schema's, not a bank's.
+	it('reads the remaining references of Refs, and the type of the creditor reference', () => {
+		const [full, several] = parse(
+			`<Ntry><Amt Ccy="EUR">10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>` +
+				`<NtryDtls><TxDtls><Refs><MsgId>MSG-1</MsgId><PmtInfId>PMT-1</PmtInfId>` +
+				`<InstrId>INSTR-1</InstrId><EndToEndId>E2E-1</EndToEndId>` +
+				`<UETR>97ed4827-7b6f-4491-a06f-b548d5a7512d</UETR><ChqNb>0001234</ChqNb>` +
+				`<ClrSysRef>CLR-1</ClrSysRef><Prtry><Tp>ORDERNUMBER</Tp><Ref>ORD-1</Ref></Prtry></Refs>` +
+				`<RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Cd>SCOR</Cd></CdOrPrtry></Tp>` +
+				`<Ref>RF18539007547034</Ref></CdtrRefInf></Strd></RmtInf></TxDtls></NtryDtls></Ntry>` +
+				`<Ntry><Amt Ccy="EUR">10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts>` +
+				`<NtryDtls><TxDtls><Refs><Prtry><Ref>ONE</Ref></Prtry><Prtry><Tp>T</Tp><Ref>TWO</Ref></Prtry>` +
+				`<Prtry><Tp>EMPTY</Tp></Prtry></Refs></TxDtls></NtryDtls></Ntry>`,
+		);
+		expect(full.messageId).toBe('MSG-1');
+		expect(full.paymentInformationId).toBe('PMT-1');
+		expect(full.instructionId).toBe('INSTR-1');
+		expect(full.e2eReference).toBe('E2E-1');
+		expect(full.uetr).toBe('97ed4827-7b6f-4491-a06f-b548d5a7512d');
+		expect(full.chequeNumber).toBe('0001234');
+		expect(full.clearingSystemReference).toBe('CLR-1');
+		expect(full.proprietaryReferences).toEqual([{ type: 'ORDERNUMBER', reference: 'ORD-1' }]);
+		expect(full.creditorReference).toBe('RF18539007547034');
+		expect(full.creditorReferenceType).toBe('SCOR');
+		// Several proprietary references arrive as an array; one without a Ref is left out.
+		expect(several.proprietaryReferences).toEqual([
+			{ type: undefined, reference: 'ONE' },
+			{ type: 'T', reference: 'TWO' },
+		]);
+	});
+
 	it('leaves every one of them absent on a plain entry', () => {
 		const [plain] = parse(
 			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`,
@@ -1374,6 +1407,14 @@ describe('CamtParser — what else an entry states', () => {
 		expect(plain.returnReason).toBeUndefined();
 		expect(plain.batch).toBeUndefined();
 		expect(plain.remoteIdentifier).toBeUndefined();
+		expect(plain.instructionId).toBeUndefined();
+		expect(plain.paymentInformationId).toBeUndefined();
+		expect(plain.messageId).toBeUndefined();
+		expect(plain.uetr).toBeUndefined();
+		expect(plain.chequeNumber).toBeUndefined();
+		expect(plain.clearingSystemReference).toBeUndefined();
+		expect(plain.proprietaryReferences).toBeUndefined();
+		expect(plain.creditorReferenceType).toBeUndefined();
 	});
 });
 

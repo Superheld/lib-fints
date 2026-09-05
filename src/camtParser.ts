@@ -601,6 +601,14 @@ export class CamtParser {
 				transactionId: single?.transactionId,
 				proprietaryCode: bkTxCd.proprietaryCode,
 				creditorReference: single?.creditorReference,
+				creditorReferenceType: single?.creditorReferenceType,
+				instructionId: single?.instructionId,
+				paymentInformationId: single?.paymentInformationId,
+				messageId: single?.messageId,
+				uetr: single?.uetr,
+				chequeNumber: single?.chequeNumber,
+				clearingSystemReference: single?.clearingSystemReference,
+				proprietaryReferences: single?.proprietaryReferences,
 			};
 		} catch (error) {
 			throw new CamtParsingError(
@@ -661,9 +669,39 @@ export class CamtParser {
 				this.getValueFromPath(txDtls, 'Purp.Prtry') ||
 				undefined,
 			creditorReference: this.getValueFromPath(txDtls, 'RmtInf.Strd.CdtrRefInf.Ref') || undefined,
+			creditorReferenceType:
+				this.getValueFromPath(txDtls, 'RmtInf.Strd.CdtrRefInf.Tp.CdOrPrtry.Cd') ||
+				this.getValueFromPath(txDtls, 'RmtInf.Strd.CdtrRefInf.Tp.CdOrPrtry.Prtry') ||
+				undefined,
+			instructionId: this.getValueFromPath(txDtls, 'Refs.InstrId') || undefined,
+			paymentInformationId: this.getValueFromPath(txDtls, 'Refs.PmtInfId') || undefined,
+			messageId: this.getValueFromPath(txDtls, 'Refs.MsgId') || undefined,
+			uetr: this.getValueFromPath(txDtls, 'Refs.UETR') || undefined,
+			chequeNumber: this.getValueFromPath(txDtls, 'Refs.ChqNb') || undefined,
+			clearingSystemReference: this.getValueFromPath(txDtls, 'Refs.ClrSysRef') || undefined,
+			proprietaryReferences: this.parseProprietaryReferences(txDtls),
 			returnReason: this.parseReturnReason(txDtls),
 		};
 		return detail;
+	}
+
+	/**
+	 * `Refs.Prtry` — one or several `{Tp, Ref}` pairs of the bank's own kind. One pair
+	 * arrives as an object, several as an array; a pair without a `Ref` says nothing
+	 * and is left out.
+	 */
+	private parseProprietaryReferences(
+		txDtls: CamtTransactionDetails,
+	): { type?: string; reference: string }[] | undefined {
+		const node = this.nodeAt(txDtls, 'Refs.Prtry');
+		if (node === undefined || node === null) return undefined;
+		const pairs = (Array.isArray(node) ? node : [node]) as GenericXMLObject[];
+		const references = pairs.flatMap((pair) => {
+			const reference = this.getValueFromPath(pair, 'Ref');
+			if (!reference) return [];
+			return [{ type: this.getValueFromPath(pair, 'Tp') || undefined, reference }];
+		});
+		return references.length > 0 ? references : undefined;
 	}
 
 	/**

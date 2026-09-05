@@ -182,6 +182,27 @@ export interface Transaction {
 	 * reference for instance, where the remitter used one instead of free text. CAMT only.
 	 */
 	creditorReference?: string;
+	/** The type of {@link creditorReference} (`CdtrRefInf.Tp.CdOrPrtry.Cd`, `SCOR` say). CAMT only. */
+	creditorReferenceType?: string;
+
+	/**
+	 * The remaining references of `Refs`, each where the bank states it. CAMT only; the
+	 * nearest MT940 has is `KREF+`, which lands in `customerReference`.
+	 */
+	/** `Refs.InstrId` — the reference the ordering party gave the instruction. */
+	instructionId?: string;
+	/** `Refs.PmtInfId` — the payment information block the payment was submitted in. */
+	paymentInformationId?: string;
+	/** `Refs.MsgId` — the message the payment was submitted in. */
+	messageId?: string;
+	/** `Refs.UETR` — the SWIFT gpi end-to-end transaction reference of a cross-border payment. */
+	uetr?: string;
+	/** `Refs.ChqNb` — the cheque number. */
+	chequeNumber?: string;
+	/** `Refs.ClrSysRef` — the clearing system's reference. */
+	clearingSystemReference?: string;
+	/** `Refs.Prtry` — references of the bank's own kind, each with its type where stated. */
+	proprietaryReferences?: { type?: string; reference: string }[];
 }
 
 /** One payment of a collective entry; see {@link Transaction.details}. */
@@ -199,6 +220,14 @@ export interface TransactionDetail {
 	purpose?: string;
 	purposeCode?: string;
 	creditorReference?: string;
+	creditorReferenceType?: string;
+	instructionId?: string;
+	paymentInformationId?: string;
+	messageId?: string;
+	uetr?: string;
+	chequeNumber?: string;
+	clearingSystemReference?: string;
+	proprietaryReferences?: { type?: string; reference: string }[];
 	returnReason?: Transaction['returnReason'];
 }
 

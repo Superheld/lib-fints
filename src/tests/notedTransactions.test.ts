@@ -76,22 +76,20 @@ describe('noted transactions', () => {
 });
 
 describe('a noted document that cannot be parsed', () => {
-	// Seen at one institute: a pending entry with neither a booking nor a value date.
 	// The booked statements had been parsed a moment before; the failure of the noted
-	// document must not take them with it.
-	const dateless = camt('N', 'PDNG', '25.00').replace('<ValDt><Dt>2026-08-01</Dt></ValDt>', '');
+	// document must not take them with it. (The case that first showed this — a
+	// pending entry without any date — parses now; here an entry without an amount.)
+	const broken = camt('N', 'PDNG', '25.00').replace('<Amt>25.00</Amt>', '');
 
 	it('CAMT: keeps the booked statements and reports the failure', () => {
 		const response = respond(
 			new StatementInteractionCAMT('1234567'),
-			`HICAZ:5:1+DE991234567123456:BANK12+${CAMT_DESCRIPTOR}+${binary(camt('B', 'BOOK', '100.00'))}+${binary(dateless)}'`,
+			`HICAZ:5:1+DE991234567123456:BANK12+${CAMT_DESCRIPTOR}+${binary(camt('B', 'BOOK', '100.00'))}+${binary(broken)}'`,
 		);
 
 		expect(response.statements?.map((s) => s.number)).toEqual(['B']);
 		expect(response.notedStatements).toBeUndefined();
-		expect(response.notedStatementsError?.message).toMatch(
-			/has neither a booking nor a value date/,
-		);
+		expect(response.notedStatementsError?.message).toMatch(/has no amount/);
 	});
 
 	it('MT940: keeps the booked statements and reports the failure', () => {
@@ -109,8 +107,8 @@ describe('a noted document that cannot be parsed', () => {
 		expect(() =>
 			respond(
 				new StatementInteractionCAMT('1234567'),
-				`HICAZ:5:1+DE991234567123456:BANK12+${CAMT_DESCRIPTOR}+${binary(dateless)}'`,
+				`HICAZ:5:1+DE991234567123456:BANK12+${CAMT_DESCRIPTOR}+${binary(broken)}'`,
 			),
-		).toThrow(/has neither a booking nor a value date/);
+		).toThrow(/has no amount/);
 	});
 });

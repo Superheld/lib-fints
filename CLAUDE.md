@@ -43,7 +43,7 @@ Statement payloads are parsed by `src/mt940parser.ts` (regex tokenizer over the 
 ## Conventions the code relies on
 
 - **A calendar day is a `Date` at local noon.** All three parsers and the `Dat` element decode to 12:00 local; `Dat.encode` uses local getters. This keeps the day stable through `JSON.stringify`. In tests write `new Date('2026-06-01T12:00')` or `new Date(2026, 5, 1)` — never `new Date('2026-06-01')` (UTC midnight, the previous day west of Greenwich).
-- **Absent, not invented.** A field the bank did not send is `undefined` — no zero balances, no `new Date()` for a missing date, no empty list standing in for a failed parse.
+- **Absent, not invented.** A field the bank did not send is `undefined` — no zero balances, no `new Date()` for a missing date, no empty list standing in for a failed parse. This goes as far as `Transaction.entryDate`/`valueDate`: a pending CAMT entry may carry no date at all (comdirect does this), and then has none.
 - **Parse errors throw.** MT940/CAMT parsing failures propagate out of `getAccountStatements`; they used to return `success: true, statements: []`, which callers read as "no transactions". (`.github/copilot-instructions.md` still says errors never surface as exceptions — that is out of date.)
 - **Parameter segments:** `bpd.allowedTransactions[].params` are those of the highest version this client supports; versions it cannot decode are kept raw in `unparsedParameters`.
 - **DataElement `maxCount > 1` only as the last element** of a DataGroup or segment — the parser cannot tell where a repeated element ends otherwise.

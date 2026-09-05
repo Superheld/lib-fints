@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Mt940Parser } from '../mt940parser.js';
+import { Mt940Parser, isIban } from '../mt940parser.js';
 
 describe('parse', () => {
 	it('parses a MT940 input string', () => {
@@ -124,6 +124,44 @@ describe('remote IBAN (subfield ?38)', () => {
 		// instead of them, and a caller may well want either.
 		expect(transaction.remoteBankId).toBe('10020030');
 		expect(transaction.remoteAccountNumber).toBe('234567');
+	});
+
+	// Some banks never send ?38 and put the IBAN into ?31, where the legacy account
+	// number belongs. Measured at one bank: 42 full IBANs in ?31, not one ?38. Without
+	// this the same booking had a remoteIban as CAMT and none as MT940.
+	it('recognises an IBAN the bank put into ?31', () => {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			':60F:C021101EUR2187,95\r\n' +
+			':61:0211011102DR800,NSTONONREF//55555\r\n' +
+			':86:008?00DAUERAUFTRAG?20Miete?30COBADEFFXXX?31DE04999999980000000003\r\n' +
+			'?32MUELLER\r\n' +
+			':62F:C021131EUR1387,95\r\n';
+
+		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
+
+		expect(transaction.remoteIban).toBe('DE04999999980000000003');
+		// ?31 keeps its content as sent, like CAMT keeps the IBAN in both fields.
+		expect(transaction.remoteAccountNumber).toBe('DE04999999980000000003');
+		expect(transaction.remoteBankId).toBe('COBADEFFXXX');
+	});
+
+	it('does not take a ?31 that merely looks like an IBAN for one', () => {
+		const input =
+			':20:1234567\r\n' +
+			':25:10020030/1234567\r\n' +
+			':28C:5/1\r\n' +
+			':60F:C021101EUR2187,95\r\n' +
+			':61:0211011102DR800,NSTONONREF//55555\r\n' +
+			':86:008?00DAUERAUFTRAG?20Miete?3010020030?31DE05999999980000000003?32MUELLER\r\n' +
+			':62F:C021131EUR1387,95\r\n';
+
+		const transaction = new Mt940Parser(input).parse()[0].transactions[0];
+
+		expect(transaction.remoteIban).toBeUndefined();
+		expect(transaction.remoteAccountNumber).toBe('DE05999999980000000003');
 	});
 
 	it('leaves the IBAN unset when the bank omits the subfield', () => {
@@ -255,4 +293,19 @@ describe('a continuation line beginning with a colon', () => {
 		expect(statements[0].transactions[0].purpose).toBe('INVOICE NUMBER');
 		expect(statements[0].closingBalance?.value).toBe(900);
 	});
+});
+
+describe('isIban', () => {
+	it.each([
+		'DE04999999980000000003',
+		'DE89370400440532013000',
+		'GB82WEST12345698765432',
+	])('accepts %s', (iban) => expect(isIban(iban)).toBe(true));
+	it.each([
+		'DE05999999980000000003',
+		'234567',
+		'DE04',
+		'MUELLER GMBH',
+		'de04999999980000000003',
+	])('rejects %s', (text) => expect(isIban(text)).toBe(false));
 });

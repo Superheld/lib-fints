@@ -27,6 +27,14 @@ export interface Transaction {
 	entryDate?: Date;
 	fundsCode: string;
 	amount: number;
+	/**
+	 * The currency of `amount`. CAMT states it on every entry (`Amt Ccy`); MT940 states
+	 * it once per statement, on the opening balance, and every :61: line is in that
+	 * currency. Absent only when neither said — a caller assuming EUR for a
+	 * foreign-currency account would otherwise be wrong by the exchange rate and never
+	 * told.
+	 */
+	currency?: string;
 	transactionType: string;
 	/**
 	 * MT940: the customer reference of :61:. CAMT: the end-to-end reference, or empty

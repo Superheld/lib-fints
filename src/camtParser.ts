@@ -556,11 +556,20 @@ export class CamtParser {
 			// had sent, and the same check that worked after an MT940 fetch, where the
 			// field is genuinely absent, quietly stopped working after a CAMT one. The
 			// four fields typed as required keep '' where there is nothing.
+			// The currency straight from the attribute, not from `money`, which falls back
+			// to EUR: an entry without `Ccy` has none, rather than one made up.
+			const amtNode = this.nodeAt(entry, 'Amt');
+			const currency =
+				amtNode && typeof amtNode === 'object' && '@Ccy' in amtNode
+					? String(amtNode['@Ccy'])
+					: undefined;
+
 			return {
 				valueDate: parsedValueDate,
 				entryDate,
 				fundsCode: bkTxCd.domainCode || creditDebitInd || '',
 				amount,
+				currency,
 				transactionType: bkTxCd.familyCode || '',
 				customerReference: single?.e2eReference ?? '',
 				bankReference: accountServicerRef,

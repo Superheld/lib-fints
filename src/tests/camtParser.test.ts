@@ -1273,6 +1273,18 @@ describe('CamtParser — what else an entry states', () => {
 
 	const parse = (entries: string) => new CamtParser(report(entries)).parse()[0].transactions;
 
+	it('reads the currency of the amount, and leaves it absent when the entry states none', () => {
+		const [euro, dollar, none] = parse(
+			`<Ntry><Amt Ccy="EUR">10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts></Ntry>` +
+				`<Ntry><Amt Ccy="USD">10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts></Ntry>` +
+				`<Ntry><Amt>10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts></Ntry>`,
+		);
+		expect(euro.currency).toBe('EUR');
+		expect(dollar.currency).toBe('USD');
+		// Not EUR: a currency the bank did not state is not one this library states.
+		expect(none.currency).toBeUndefined();
+	});
+
 	it('reads the status as a code element (camt.052.001.08) and as plain text (earlier)', () => {
 		const [coded, plain, none] = parse(
 			`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>PDNG</Cd></Sts><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>` +

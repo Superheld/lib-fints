@@ -162,6 +162,9 @@ export class Mt940Parser {
 							entryDate: entryDate,
 							fundsCode: fundsCode,
 							amount: amount,
+							// :61: carries no currency; the statement's, stated on :60F:/:60M:
+							// which precedes every transaction, is the one it is in.
+							currency: this.currentStatement.openingBalance?.currency,
 							transactionType: transactionType,
 							customerReference: customerReference,
 							bankReference: bankReference,

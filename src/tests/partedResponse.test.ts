@@ -3,6 +3,8 @@ import type { BankingInformation } from '../bankingInformation.js';
 import type { BankTransaction } from '../bankTransaction.js';
 import { FinTSConfig } from '../config.js';
 import { Dialog } from '../dialog.js';
+import type { CustomerOrderInteraction } from '../interactions/customerInteraction.js';
+import { ElectronicStatementInteraction } from '../interactions/electronicStatementInteraction.js';
 import { StatementInteractionCAMT } from '../interactions/statementInteractionCAMT.js';
 import { CustomerOrderMessage, Message } from '../message.js';
 import { HICAZ, type HICAZSegment } from '../segments/HICAZ.js';
@@ -92,7 +94,19 @@ describe('parted responses (bank answer code 3040)', () => {
 		} as HKCAZSegment);
 
 		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
-		await (dialog as any).handlePartedMessages(request, first, interaction);
+		(dialog as any).currentOrderSegments = request.segments.filter(
+			(s) => s.header.segId === HKCAZ.Id,
+		);
+		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
+		await (dialog as any).handlePartedMessages(first, interaction);
+
+		// The continuation is the order again, with the mark — and an ORDER message, so
+		// the HTTP client holds the response segment for the next round.
+		const sent = vi.mocked(dialog.httpClient.sendMessage).mock.calls[0][0] as CustomerOrderMessage;
+		expect(sent).toBeInstanceOf(CustomerOrderMessage);
+		expect(sent.orderResponseSegId).toBe(HICAZ.Id);
+		const continued = sent.findSegment<HKCAZSegment & { continuationMark?: string }>(HKCAZ.Id);
+		expect(continued?.continuationMark).toBe('AUFSETZ_1');
 
 		// Before the fix this was a single unresolved PARTED segment and everything after
 		// the first portion was lost without a trace.
@@ -119,7 +133,11 @@ describe('parted responses (bank answer code 3040)', () => {
 		} as HKCAZSegment);
 
 		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
-		await (dialog as any).handlePartedMessages(request, only, interaction);
+		(dialog as any).currentOrderSegments = request.segments.filter(
+			(s) => s.header.segId === HKCAZ.Id,
+		);
+		// biome-ignore lint/suspicious/noExplicitAny: reaching into the private collector on purpose
+		await (dialog as any).handlePartedMessages(only, interaction);
 
 		expect(dialog.httpClient.sendMessage).not.toHaveBeenCalled();
 		const segments = only.findAllSegments<HICAZSegment>(HICAZ.Id);
@@ -207,11 +225,11 @@ describe('several response segments in one bank message', () => {
 		} as HKCAZSegment);
 
 		// biome-ignore lint/suspicious/noExplicitAny: private Sammelroutine, absichtlich
-		await (dialog as any).handlePartedMessages(
-			request,
-			message,
-			new StatementInteractionCAMT('123'),
+		(dialog as any).currentOrderSegments = request.segments.filter(
+			(s) => s.header.segId === HKCAZ.Id,
 		);
+		// biome-ignore lint/suspicious/noExplicitAny: private Sammelroutine, absichtlich
+		await (dialog as any).handlePartedMessages(message, new StatementInteractionCAMT('123'));
 
 		expect(message.findAllSegments('PARTED')).toHaveLength(0);
 		const segments = message.findAllSegments<HICAZSegment>(HICAZ.Id);
@@ -230,5 +248,114 @@ describe('several response segments in one bank message', () => {
 		const message = Message.decode(hicazs, HICAZ.Id);
 		expect(message.findAllSegments('PARTED')).toHaveLength(0);
 		expect(message.findAllSegments('HICAZS')).toHaveLength(1);
+	});
+});
+
+describe('a parted response after a TAN', () => {
+	// Under PSD2 a statement request beyond 90 days needs a TAN, so the bank's response
+	// — and its "more data follows" — arrives on the TAN message. That message used to
+	// be a plain CustomerMessage: the HTTP client had no response segment to hold, the
+	// 3040 went unheard, and a caller got the first 100 of 185 transactions as a
+	// complete success.
+	function dialogWithOrder(
+		interaction: CustomerOrderInteraction = new StatementInteractionCAMT('123'),
+	): Dialog {
+		const config = FinTSConfig.fromBankingInformation(
+			'PRODUCT',
+			'1.0',
+			{
+				systemId: 'X',
+				bankMessages: [],
+				bpd: {
+					version: 1,
+					bankId: '12030000',
+					bankName: 'Mock',
+					countryCode: 280,
+					url: 'http://mock.bank.url',
+					allowedTransactions: [
+						{ transId: 'HKCAZ', tanRequired: true, versions: [1] },
+						{ transId: 'HKEKA', tanRequired: false, versions: [5] },
+					],
+					supportedTanMethods: [],
+					availableTanMethodIds: [],
+					maxTransactionsPerMessage: 1,
+					supportedLanguages: [],
+					supportedHbciVersions: [300],
+				},
+				// biome-ignore lint/suspicious/noExplicitAny: lean mock
+			} as any,
+			'user',
+			'pin',
+		);
+		const dialog = new Dialog(config);
+		dialog.addCustomerInteraction(interaction);
+		dialog.currentInteractionIndex = 1; // the order is waiting for its TAN
+		return dialog;
+	}
+
+	it('sends the TAN as an order message, so the response segment is held', () => {
+		const dialog = dialogWithOrder();
+		// biome-ignore lint/suspicious/noExplicitAny: private builder, on purpose
+		const tanMessage = (dialog as any).createCurrentTanMessage('REF-1', '123456');
+		expect(tanMessage).toBeInstanceOf(CustomerOrderMessage);
+		expect((tanMessage as CustomerOrderMessage).orderResponseSegId).toBe(HICAZ.Id);
+	});
+
+	it('sends the TAN for the initialisation as a plain message', () => {
+		const dialog = dialogWithOrder();
+		dialog.currentInteractionIndex = 0;
+		// biome-ignore lint/suspicious/noExplicitAny: private builder, on purpose
+		const tanMessage = (dialog as any).createCurrentTanMessage('REF-1', '123456');
+		expect(tanMessage).not.toBeInstanceOf(CustomerOrderMessage);
+	});
+
+	it('refuses to return a partial response when nothing was held for continuation', async () => {
+		// Decoded without a segment id to hold — as the response to a plain message is.
+		const unheld = Message.decode(
+			"HIRMG:3:2+0010::Entgegengenommen.+3040::Es liegen weitere Umsaetze vor.:AUFSETZ_1'" +
+				hicazText('<Doc>one</Doc>'),
+		);
+		const dialog = dialogWithOrder();
+		await expect(
+			// biome-ignore lint/suspicious/noExplicitAny: private collector, on purpose
+			(dialog as any).handlePartedMessages(unheld),
+		).rejects.toThrow(/announced more data for HKCAZ .* no response segment was held/);
+	});
+
+	it('leaves 3040 to an interaction whose order cannot be continued', async () => {
+		// HKEKA announces its next document with 3040 and an offset; the interaction
+		// reads that itself. Nothing to hold, nothing to complain about.
+		const message = Message.decode(
+			"HIRMG:3:2+0010::Entgegengenommen.+3040::Weitere Dokumente.:OFFSET_1'",
+		);
+		const dialog = dialogWithOrder(new ElectronicStatementInteraction('123'));
+		await expect(
+			// biome-ignore lint/suspicious/noExplicitAny: private collector, on purpose
+			(dialog as any).handlePartedMessages(message),
+		).resolves.toBeUndefined();
+	});
+
+	it('refuses, not silently truncates, when the bank wants a TAN for the continuation', async () => {
+		const dialog = dialogWithOrder();
+		// biome-ignore lint/suspicious/noExplicitAny: private state, on purpose
+		(dialog as any).currentOrderSegments = [
+			{
+				header: { segId: HKCAZ.Id, segNr: 0, version: 1 },
+				account: { iban: 'DE991234567123456', bic: 'BANK12' },
+				acceptedCamtFormats: ['urn:iso:std:iso:20022:tech:xsd:camt.052.001.08'],
+				allAccounts: false,
+			} as HKCAZSegment,
+		];
+		const first = responseMessage(hicazText('<Doc>one</Doc>'), true);
+		const tanDemand = Message.decode(
+			"HIRMG:3:2+0030::Auftrag entgegengenommen. Bitte TAN eingeben.'HITAN:4:6:3+4++REF-2+Bitte TAN'",
+			HICAZ.Id,
+		);
+		vi.mocked(dialog.httpClient.sendMessage).mockResolvedValueOnce(tanDemand);
+
+		await expect(
+			// biome-ignore lint/suspicious/noExplicitAny: private collector, on purpose
+			(dialog as any).handlePartedMessages(first),
+		).rejects.toThrow(/requires a TAN to continue the parted response/);
 	});
 });

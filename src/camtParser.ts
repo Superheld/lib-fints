@@ -491,21 +491,14 @@ export class CamtParser {
 			// Both are optional in camt.052, and an entry the bank has not booked yet — a
 			// pending one — commonly has no booking date. Each stands in for the other,
 			// and failing both, a date the bank stated on the transaction itself does:
-			// when it was settled, accepted or made. None of these is invented. This once
-			// put today's date in for a missing booking date, which gave every pending
-			// entry the day it was fetched as the day it was booked.
-			const relatedDate = this.relatedDateOf(entry);
-			const entryDateStr = bookingDate || valueDate || relatedDate;
-			if (!entryDateStr) {
-				// Naming the elements the entry does have is the one clue a log can give as
-				// to where this bank puts the dates instead — one such entry was seen with
-				// neither, and without the raw XML that is all there is to go on.
-				throw new CamtParsingError(
-					`Entry ${entryNumber} (${this.accountServicerRefOf(entry)}) has neither a booking ` +
-						`nor a value date; its elements are: ${Object.keys(entry).join(', ')}`,
-				);
-			}
-			const entryDate = this.parseDate(entryDateStr);
+			// when it was settled, accepted or made. Failing that too, the entry has no
+			// date, and none is put there: not today's, which this once did and which
+			// gave every pending entry the day it was fetched as the day it was booked;
+			// and no refusal either, which this did next and which cost a caller the
+			// pending entries of a bank that sends them with no date element at all —
+			// comdirect does, with Amt, CdtDbtInd, Sts and the details, nothing more.
+			const entryDateStr = bookingDate || valueDate || this.relatedDateOf(entry);
+			const entryDate = entryDateStr ? this.parseDate(entryDateStr) : undefined;
 			const parsedValueDate = valueDate ? this.parseDate(valueDate) : entryDate;
 
 			const accountServicerRef = this.getValueFromPath(entry, 'AcctSvcrRef') || '';
@@ -527,8 +520,13 @@ export class CamtParser {
 			const firstDetails = Array.isArray(rawDetails) ? rawDetails[0] : rawDetails;
 
 			// Extract bank transaction code structure (BkTxCd) - can be at entry level or TxDtls level
+			// The proprietary code counts as a code: an entry that carries only `Prtry` —
+			// comdirect's pending entries do — used to fall through to the details and
+			// come back with nothing.
 			let bkTxCd = this.parseBankTransactionCode(entry);
-			if (!bkTxCd.domainCode && !bkTxCd.familyCode && !bkTxCd.subFamilyCode && firstDetails) {
+			const hasCode = (code: typeof bkTxCd) =>
+				!!(code.domainCode || code.familyCode || code.subFamilyCode || code.proprietaryCode);
+			if (!hasCode(bkTxCd) && firstDetails) {
 				bkTxCd = this.parseBankTransactionCode(firstDetails);
 			}
 

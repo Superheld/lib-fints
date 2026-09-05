@@ -17,8 +17,14 @@ export interface Statement {
 }
 
 export interface Transaction {
-	valueDate: Date;
-	entryDate: Date;
+	/**
+	 * Absent only on a CAMT entry the bank has not booked yet and has given no date
+	 * at all — no booking date, no value date, none on the transaction behind it.
+	 * Seen at comdirect on pending entries. MT940 always states both.
+	 */
+	valueDate?: Date;
+	/** See {@link valueDate}. */
+	entryDate?: Date;
 	fundsCode: string;
 	amount: number;
 	transactionType: string;

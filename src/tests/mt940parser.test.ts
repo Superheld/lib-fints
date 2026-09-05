@@ -65,7 +65,7 @@ describe('entry date year', () => {
 	 * The entry date in field :61: carries only MMDD. Its year is derived from the value
 	 * date, and the two can straddle a month or year boundary in either direction.
 	 */
-	function entryDateOf(valueDate: string, entryDate: string): Date {
+	function entryDateOf(valueDate: string, entryDate: string): Date | undefined {
 		const input =
 			':20:1234567\r\n' +
 			':25:10020030/1234567\r\n' +

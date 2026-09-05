@@ -157,13 +157,13 @@ describe('CamtParser', () => {
 
 		// Check date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
-		expect(transaction.valueDate.getFullYear()).toBe(2013);
-		expect(transaction.valueDate.getMonth()).toBe(10); // November (0-based)
-		expect(transaction.valueDate.getDate()).toBe(1);
+		expect(transaction.valueDate?.getFullYear()).toBe(2013);
+		expect(transaction.valueDate?.getMonth()).toBe(10); // November (0-based)
+		expect(transaction.valueDate?.getDate()).toBe(1);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
-		expect(transaction.entryDate.getFullYear()).toBe(2013);
-		expect(transaction.entryDate.getMonth()).toBe(10); // November (0-based)
-		expect(transaction.entryDate.getDate()).toBe(1);
+		expect(transaction.entryDate?.getFullYear()).toBe(2013);
+		expect(transaction.entryDate?.getMonth()).toBe(10); // November (0-based)
+		expect(transaction.entryDate?.getDate()).toBe(1);
 
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('CRDT'); // Credit/debit indicator
@@ -287,9 +287,9 @@ describe('CamtParser', () => {
 
 		// Date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
-		expect(transaction.valueDate.getFullYear()).toBe(2013);
+		expect(transaction.valueDate?.getFullYear()).toBe(2013);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
-		expect(transaction.entryDate.getFullYear()).toBe(2013);
+		expect(transaction.entryDate?.getFullYear()).toBe(2013);
 
 		// Transaction type indicators
 		expect(transaction.fundsCode).toBe('DBIT'); // Debit indicator
@@ -517,13 +517,13 @@ describe('CamtParser', () => {
 
 		// Date fields with exact verification
 		expect(transaction.valueDate).toBeInstanceOf(Date);
-		expect(transaction.valueDate.getFullYear()).toBe(2023);
-		expect(transaction.valueDate.getMonth()).toBe(11); // December
-		expect(transaction.valueDate.getDate()).toBe(22);
+		expect(transaction.valueDate?.getFullYear()).toBe(2023);
+		expect(transaction.valueDate?.getMonth()).toBe(11); // December
+		expect(transaction.valueDate?.getDate()).toBe(22);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
-		expect(transaction.entryDate.getFullYear()).toBe(2023);
-		expect(transaction.entryDate.getMonth()).toBe(11);
-		expect(transaction.entryDate.getDate()).toBe(22);
+		expect(transaction.entryDate?.getFullYear()).toBe(2023);
+		expect(transaction.entryDate?.getMonth()).toBe(11);
+		expect(transaction.entryDate?.getDate()).toBe(22);
 
 		// Bank transaction code structure
 		expect(transaction.fundsCode).toBe('PMNT'); // Domain code
@@ -623,8 +623,8 @@ describe('CamtParser', () => {
 		expect(transaction.mandateReference).toBeUndefined(); // No MndtId
 
 		// Test date parsing consistency
-		expect(transaction.valueDate.getDate()).toBe(21); // Different from entry date
-		expect(transaction.entryDate.getDate()).toBe(22);
+		expect(transaction.valueDate?.getDate()).toBe(21); // Different from entry date
+		expect(transaction.entryDate?.getDate()).toBe(22);
 
 		// Test transaction type fields with no BkTxCd
 		expect(transaction.fundsCode).toBe('CRDT');
@@ -901,13 +901,13 @@ describe('CamtParser', () => {
 
 		// Check date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
-		expect(transaction.valueDate.getFullYear()).toBe(2026);
-		expect(transaction.valueDate.getMonth()).toBe(0); // November (0-based)
-		expect(transaction.valueDate.getDate()).toBe(5);
+		expect(transaction.valueDate?.getFullYear()).toBe(2026);
+		expect(transaction.valueDate?.getMonth()).toBe(0); // November (0-based)
+		expect(transaction.valueDate?.getDate()).toBe(5);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
-		expect(transaction.entryDate.getFullYear()).toBe(2026);
-		expect(transaction.entryDate.getMonth()).toBe(0); // November (0-based)
-		expect(transaction.entryDate.getDate()).toBe(5);
+		expect(transaction.entryDate?.getFullYear()).toBe(2026);
+		expect(transaction.entryDate?.getMonth()).toBe(0); // November (0-based)
+		expect(transaction.entryDate?.getDate()).toBe(5);
 
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('PMNT');
@@ -1042,13 +1042,13 @@ describe('CamtParser', () => {
 
 		// Check date fields
 		expect(transaction.valueDate).toBeInstanceOf(Date);
-		expect(transaction.valueDate.getFullYear()).toBe(2025);
-		expect(transaction.valueDate.getMonth()).toBe(11); // November (0-based)
-		expect(transaction.valueDate.getUTCDate()).toBe(10);
+		expect(transaction.valueDate?.getFullYear()).toBe(2025);
+		expect(transaction.valueDate?.getMonth()).toBe(11); // November (0-based)
+		expect(transaction.valueDate?.getUTCDate()).toBe(10);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
-		expect(transaction.entryDate.getFullYear()).toBe(2025);
-		expect(transaction.entryDate.getMonth()).toBe(11); // November (0-based)
-		expect(transaction.entryDate.getUTCDate()).toBe(8);
+		expect(transaction.entryDate?.getFullYear()).toBe(2025);
+		expect(transaction.entryDate?.getMonth()).toBe(11); // November (0-based)
+		expect(transaction.entryDate?.getUTCDate()).toBe(8);
 
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('DBIT');
@@ -1160,16 +1160,22 @@ describe('CamtParser — dates the bank did not send', () => {
 			report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry('<ValDt><Dt>2026-07-03</Dt></ValDt>')),
 		).parse();
 		const [transaction] = statement.transactions;
-		expect(transaction.valueDate.getDate()).toBe(3);
-		expect(transaction.entryDate.getDate()).toBe(3);
+		expect(transaction.valueDate?.getDate()).toBe(3);
+		expect(transaction.entryDate?.getDate()).toBe(3);
 	});
 
-	it('refuses an entry with neither a booking nor a value date', () => {
-		expect(() =>
-			new CamtParser(report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry(''))).parse(),
-		).toThrow(
-			/Entry 1 \(REF1\) has neither a booking nor a value date; its elements are: Amt, CdtDbtInd, Sts, AcctSvcrRef/,
-		);
+	it('leaves both dates absent on an entry the bank gave none', () => {
+		// comdirect sends pending entries with Amt, CdtDbtInd, Sts and the details — no
+		// date element anywhere. The parser refused those once; the type says now what
+		// the bank said: no date.
+		const [statement] = new CamtParser(
+			report(closing('<Dt><Dt>2026-07-01</Dt></Dt>'), entry('')),
+		).parse();
+		const [transaction] = statement.transactions;
+		expect(transaction.amount).toBe(-10);
+		expect(transaction.status).toBe('PDNG');
+		expect(transaction.entryDate).toBeUndefined();
+		expect(transaction.valueDate).toBeUndefined();
 	});
 
 	it('reads a balance date stated as a date-time', () => {
@@ -1201,8 +1207,8 @@ describe('CamtParser — dates the bank did not send', () => {
 					`<NtryDtls><TxDtls><RltdDts><IntrBkSttlmDt>2026-07-04</IntrBkSttlmDt></RltdDts></TxDtls></NtryDtls></Ntry>`,
 			),
 		).parse();
-		expect(statement.transactions[0].entryDate.getDate()).toBe(4);
-		expect(statement.transactions[0].valueDate.getDate()).toBe(4);
+		expect(statement.transactions[0].entryDate?.getDate()).toBe(4);
+		expect(statement.transactions[0].valueDate?.getDate()).toBe(4);
 	});
 });
 
@@ -1482,5 +1488,39 @@ describe('CamtParser — collective entries and the remaining elements', () => {
 				`<NtryDtls><TxDtls><RmtInf><Ustrd>Miete</Ustrd><Strd><AddtlRmtInf>ignored</AddtlRmtInf></Strd></RmtInf></TxDtls></NtryDtls></Ntry>`,
 		);
 		expect(t.purpose).toBe('Miete');
+	});
+});
+
+describe('CamtParser — pending entries as comdirect sends them', () => {
+	// Invented in the measured form, not copied: three pending entries carrying Amt,
+	// CdtDbtInd, Sts, BkTxCd and the remittance text — and no date element anywhere,
+	// not on the entry, not on the transaction behind it. The parser used to refuse
+	// these, and with them the whole noted document.
+	const pending = (amount: string, text: string) =>
+		`<Ntry><Amt Ccy="EUR">${amount}</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>PDNG</Cd></Sts>` +
+		`<BkTxCd><Prtry><Cd>NDDT+105</Cd><Issr>DK</Issr></Prtry></BkTxCd>` +
+		`<NtryDtls><TxDtls><RmtInf><Ustrd>${text}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`;
+	const document =
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>N1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		pending('49.99', 'Vormerkung Strom') +
+		pending('12.00', 'Vormerkung Streaming') +
+		pending('250.00', 'Vormerkung Miete') +
+		`</Rpt></BkToCstmrAcctRpt></Document>`;
+
+	it('parses all three, dateless, with what they do carry', () => {
+		const [statement] = new CamtParser(document).parse();
+		expect(statement.transactions).toHaveLength(3);
+		expect(statement.openingBalance).toBeUndefined();
+		expect(statement.closingBalance).toBeUndefined();
+
+		const [strom] = statement.transactions;
+		expect(strom.amount).toBe(-49.99);
+		expect(strom.status).toBe('PDNG');
+		expect(strom.proprietaryCode).toBe('NDDT+105');
+		expect(strom.purpose).toBe('Vormerkung Strom');
+		expect(strom.entryDate).toBeUndefined();
+		expect(strom.valueDate).toBeUndefined();
+		expect(strom.bankReference).toBe('');
 	});
 });

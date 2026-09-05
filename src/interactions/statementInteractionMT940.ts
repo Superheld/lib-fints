@@ -4,9 +4,15 @@ import { internationalAccount, nationalAccount } from '../accountDescriptor.js';
 import type { Message } from '../message.js';
 import { Mt940Parser } from '../mt940parser.js';
 import type { Segment } from '../segment.js';
+import type { Statement } from '../statement.js';
 import { HIKAZ, type HIKAZSegment } from '../segments/HIKAZ.js';
 import { HKKAZ, type HKKAZSegment } from '../segments/HKKAZ.js';
-import { CustomerOrderInteraction, type StatementResponse } from './customerInteraction.js';
+import {
+	CustomerOrderInteraction,
+	StatementParsingError,
+	type StatementResponse,
+	toError,
+} from './customerInteraction.js';
 
 export class StatementInteractionMT940 extends CustomerOrderInteraction {
 	constructor(
@@ -64,19 +70,25 @@ export class StatementInteractionMT940 extends CustomerOrderInteraction {
 		// a caller fetching incrementally moved on, and the bookings were gone with
 		// nothing but a console warning to show for it. One bad line in one of twenty
 		// statements takes the whole stream down, so the caller has to hear about it.
-		clientResponse.statements = bookedTransactions
-			? new Mt940Parser(bookedTransactions).parse()
-			: [];
+		clientResponse.statements = bookedTransactions ? parseMt940(bookedTransactions) : [];
 
 		// The second field of HIKAZ, sent alongside the first and until now never read.
 		// Its failure must not take the booked statements with it; see `notedStatementsError`.
 		if (notedTransactions) {
 			try {
-				clientResponse.notedStatements = new Mt940Parser(notedTransactions).parse();
+				clientResponse.notedStatements = parseMt940(notedTransactions);
 			} catch (error) {
-				clientResponse.notedStatementsError =
-					error instanceof Error ? error : new Error(String(error));
+				clientResponse.notedStatementsError = toError(error);
 			}
 		}
+	}
+}
+
+/** Parses one MT940 stream; a failure carries the stream it happened in. */
+function parseMt940(stream: string): Statement[] {
+	try {
+		return new Mt940Parser(stream).parse();
+	} catch (error) {
+		throw new StatementParsingError('MT940', stream, toError(error));
 	}
 }

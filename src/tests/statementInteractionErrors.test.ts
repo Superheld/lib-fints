@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { StatementParsingError } from '../interactions/customerInteraction.js';
 import { StatementInteractionCAMT } from '../interactions/statementInteractionCAMT.js';
 import { StatementInteractionMT940 } from '../interactions/statementInteractionMT940.js';
 import { Message } from '../message.js';
@@ -51,8 +52,47 @@ describe('a statement interaction faced with a payload it cannot parse', () => {
 		const interaction = new StatementInteractionMT940('1234567890');
 		const clientResponse = {} as never;
 
-		expect(() => interaction.handleResponse(message, clientResponse)).toThrow(SyntaxError);
+		expect(() => interaction.handleResponse(message, clientResponse)).toThrow(
+			StatementParsingError,
+		);
 		expect((clientResponse as { statements?: unknown }).statements).toBeUndefined();
+	});
+
+	// The response is lost with the exception, and so was the text the parser failed
+	// on: a message, and no way to tell a parser gap from a bank sending something odd.
+	it('MT940: the error carries the stream and the parser error', () => {
+		const message = Message.decode(`${ANSWERS}${hikaz(VALID_MT940 + BROKEN_MT940)}`);
+		const interaction = new StatementInteractionMT940('1234567890');
+
+		let thrown: unknown;
+		try {
+			interaction.handleResponse(message, {} as never);
+		} catch (error) {
+			thrown = error;
+		}
+		const parsingError = thrown as StatementParsingError;
+		expect(parsingError).toBeInstanceOf(StatementParsingError);
+		expect(parsingError.format).toBe('MT940');
+		expect(parsingError.document).toBe(VALID_MT940 + BROKEN_MT940);
+		expect(parsingError.cause).toBeInstanceOf(SyntaxError);
+		expect(parsingError.message).toContain(parsingError.cause.message);
+	});
+
+	it('CAMT: the error carries the one document that failed, not the batch', () => {
+		const message = Message.decode(`${ANSWERS}${hicaz(VALID_CAMT)}${hicaz(BROKEN_CAMT)}`);
+		const interaction = new StatementInteractionCAMT('1234567890');
+
+		let thrown: unknown;
+		try {
+			interaction.handleResponse(message, {} as never);
+		} catch (error) {
+			thrown = error;
+		}
+		const parsingError = thrown as StatementParsingError;
+		expect(parsingError).toBeInstanceOf(StatementParsingError);
+		expect(parsingError.format).toBe('CAMT');
+		expect(parsingError.document).toBe(BROKEN_CAMT);
+		expect(parsingError.cause.message).toMatch(/Invalid CAMT XML structure/);
 	});
 
 	it('CAMT: throws instead of answering with an empty list', () => {

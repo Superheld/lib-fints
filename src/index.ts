@@ -24,6 +24,7 @@ export {
 	ClientResponse,
 	CustomerOrderInteraction,
 	AccountStatementFormat,
+	StatementParsingError,
 	StatementResponse,
 } from './interactions/customerInteraction.js';
 export {

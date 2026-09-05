@@ -8,7 +8,12 @@ import { HICAZ, type HICAZSegment } from '../segments/HICAZ.js';
 import type { HICAZSParameter } from '../segments/HICAZS.js';
 import { HKCAZ, type HKCAZSegment } from '../segments/HKCAZ.js';
 import type { Statement } from '../statement.js';
-import { CustomerOrderInteraction, type StatementResponse } from './customerInteraction.js';
+import {
+	CustomerOrderInteraction,
+	StatementParsingError,
+	type StatementResponse,
+	toError,
+} from './customerInteraction.js';
 
 export class StatementInteractionCAMT extends CustomerOrderInteraction {
 	constructor(
@@ -80,8 +85,7 @@ export class StatementInteractionCAMT extends CustomerOrderInteraction {
 			try {
 				clientResponse.notedStatements = parseCamtDocuments(notedDocuments);
 			} catch (error) {
-				clientResponse.notedStatementsError =
-					error instanceof Error ? error : new Error(String(error));
+				clientResponse.notedStatementsError = toError(error);
 			}
 		}
 	}
@@ -98,7 +102,16 @@ function decodeCamtDocument(camtMessage: string): string {
 	return isUtf8Encoded ? Buffer.from(camtMessage, 'latin1').toString('utf8') : camtMessage;
 }
 
-/** Parses CAMT documents (one per booking day) and combines their statements. */
+/**
+ * Parses CAMT documents (one per booking day) and combines their statements. A failure
+ * names the document it happened in, not the whole batch.
+ */
 function parseCamtDocuments(documents: string[]): Statement[] {
-	return documents.flatMap((document) => new CamtParser(document).parse());
+	return documents.flatMap((document) => {
+		try {
+			return new CamtParser(document).parse();
+		} catch (error) {
+			throw new StatementParsingError('CAMT', document, toError(error));
+		}
+	});
 }

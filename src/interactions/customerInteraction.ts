@@ -89,6 +89,29 @@ export interface StatementResponse extends ClientResponse {
 }
 
 /**
+ * A statement the bank sent could not be parsed. Carries the text it failed on, so the
+ * caller can look at what the parser saw: a booked statement that fails takes the whole
+ * response down (see `StatementResponse.notedStatementsError` for why), and without this
+ * the document was gone with it — leaving a message, and no way to tell a parser gap
+ * from a bank sending something odd. `cause` is the parser's own error.
+ */
+export function toError(thrown: unknown): Error {
+	return thrown instanceof Error ? thrown : new Error(String(thrown));
+}
+
+export class StatementParsingError extends Error {
+	constructor(
+		public format: AccountStatementFormat,
+		/** The document (CAMT) or stream (MT940) the parser failed on, as the parser saw it. */
+		public document: string,
+		public cause: Error,
+	) {
+		super(`Cannot parse the ${format} statements: ${cause.message}`);
+		this.name = 'StatementParsingError';
+	}
+}
+
+/**
  * The format an account statement arrived in; see `StatementResponse.format`. (Not the
  * `StatementFormat` of HKEKA, which names the file formats of electronic statements.)
  */

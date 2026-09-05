@@ -108,6 +108,54 @@ export interface Transaction {
 		paymentInformationId?: string;
 		numberOfTransactions?: number;
 	};
+
+	/**
+	 * The payments behind a collective entry, one per payment. CAMT only.
+	 *
+	 * A bank books a batch — a payroll, a direct-debit run — as ONE entry with the
+	 * total, and lists the payments in it as several transaction details. Where there
+	 * is one, its fields are on the transaction itself and this is absent. Where
+	 * there are several, no single counterparty exists for the entry: the party
+	 * fields on the transaction stay empty and the payments are here.
+	 */
+	details?: TransactionDetail[];
+
+	/** The bank's own reference for the entry (`NtryRef`), distinct from `bankReference` (`AcctSvcrRef`). CAMT only. */
+	entryReference?: string;
+
+	/** The bank's transaction id (`Refs.TxId`), where stated. CAMT only. */
+	transactionId?: string;
+
+	/**
+	 * The bank transaction code as the bank's own code (`BkTxCd.Prtry.Cd`). German
+	 * banks put the SWIFT type and the Geschäftsvorfallcode here, `NTRF+117` say —
+	 * the counterpart of MT940's `:61:` type and `:86:` code. CAMT only.
+	 */
+	proprietaryCode?: string;
+
+	/**
+	 * The structured creditor reference (`RmtInf.Strd.CdtrRefInf.Ref`), an RF creditor
+	 * reference for instance, where the remitter used one instead of free text. CAMT only.
+	 */
+	creditorReference?: string;
+}
+
+/** One payment of a collective entry; see {@link Transaction.details}. */
+export interface TransactionDetail {
+	/** Signed like {@link Transaction.amount}; absent when the bank states only the total. */
+	amount?: Money;
+	remoteName?: string;
+	remoteIban?: string;
+	remoteBankId?: string;
+	remoteIdentifier?: string;
+	ultimateParty?: string;
+	e2eReference?: string;
+	mandateReference?: string;
+	transactionId?: string;
+	purpose?: string;
+	purposeCode?: string;
+	creditorReference?: string;
+	returnReason?: Transaction['returnReason'];
 }
 
 export interface Money {

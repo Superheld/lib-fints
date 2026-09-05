@@ -45,11 +45,13 @@ export interface Transaction {
 	additionalInformation?: string;
 
 	/**
-	 * IBAN of the remote account, when the bank states it as such.
+	 * IBAN of the remote account, when the bank states it as such (CAMT, or MT940
+	 * subfield ?38) or when what it put into MT940 subfield ?31 is one — some banks
+	 * send the IBAN there instead of the legacy account number and never send ?38.
 	 *
 	 * Kept apart from {@link remoteAccountNumber}, which carries whatever the format
-	 * offers: an IBAN in CAMT, but the legacy account number in MT940 (subfield ?31).
-	 * A caller that wants an IBAN and reads `remoteAccountNumber` gets one of the two
+	 * offers: an IBAN in CAMT, in MT940 the content of ?31 whatever it is. A caller
+	 * that wants an IBAN and reads `remoteAccountNumber` gets one of the two
 	 * depending on how the statement was fetched — and no error either way.
 	 */
 	remoteIban?: string;

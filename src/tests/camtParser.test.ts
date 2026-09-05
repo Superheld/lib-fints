@@ -1182,10 +1182,27 @@ describe('CamtParser — dates the bank did not send', () => {
 		expect(statement.closingBalance?.date).toEqual(new Date('2026-01-22T00:00:00.000+01:00'));
 	});
 
-	it('refuses a balance without a date', () => {
-		expect(() =>
-			new CamtParser(report(closing(''), entry('<BookgDt><Dt>2026-07-01</Dt></BookgDt>'))).parse(),
-		).toThrow(/Balance of type CLBD in report 1 has no date/);
+	it('leaves out a balance without a date, and keeps the entries', () => {
+		// The balances accompany the entries, which are the record; one balance the
+		// bank got wrong must not cost a caller the entries. This used to throw.
+		const [statement] = new CamtParser(
+			report(closing(''), entry('<BookgDt><Dt>2026-07-01</Dt></BookgDt>')),
+		).parse();
+		expect(statement.closingBalance).toBeUndefined();
+		expect(statement.transactions).toHaveLength(1);
+	});
+
+	it('takes a date the bank stated on the transaction when the entry has none', () => {
+		// Neither BookgDt nor ValDt, but the transaction behind it says when it settled.
+		const [statement] = new CamtParser(
+			report(
+				closing('<Dt><Dt>2026-07-01</Dt></Dt>'),
+				`<Ntry><Amt>10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>PDNG</Sts>` +
+					`<NtryDtls><TxDtls><RltdDts><IntrBkSttlmDt>2026-07-04</IntrBkSttlmDt></RltdDts></TxDtls></NtryDtls></Ntry>`,
+			),
+		).parse();
+		expect(statement.transactions[0].entryDate.getDate()).toBe(4);
+		expect(statement.transactions[0].valueDate.getDate()).toBe(4);
 	});
 });
 
@@ -1338,5 +1355,46 @@ describe('CamtParser — what else an entry states', () => {
 		expect(plain.returnReason).toBeUndefined();
 		expect(plain.batch).toBeUndefined();
 		expect(plain.remoteIdentifier).toBeUndefined();
+	});
+});
+
+describe('CamtParser — figures the bank left incomplete', () => {
+	const report = (balance: string, entry: string) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`${balance}${entry}</Rpt></BkToCstmrAcctRpt></Document>`;
+	const entry = `<Ntry><Amt>10.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`;
+
+	it('leaves out a balance without an amount instead of making it zero', () => {
+		const [statement] = new CamtParser(
+			report(
+				`<Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-07-01</Dt></Dt></Bal>`,
+				entry,
+			),
+		).parse();
+		expect(statement.closingBalance).toBeUndefined();
+		expect(statement.transactions).toHaveLength(1);
+	});
+
+	it('refuses an entry without an amount instead of making it zero', () => {
+		expect(() =>
+			new CamtParser(
+				report(
+					'',
+					`<Ntry><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>2026-07-01</Dt></BookgDt></Ntry>`,
+				),
+			).parse(),
+		).toThrow(/Entry 1 \(no AcctSvcrRef\) has no amount; its elements are: CdtDbtInd, BookgDt/);
+	});
+
+	it('refuses a date it cannot read instead of producing an Invalid Date', () => {
+		expect(() =>
+			new CamtParser(
+				report(
+					'',
+					`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd><BookgDt><Dt>01.07.2026</Dt></BookgDt></Ntry>`,
+				),
+			).parse(),
+		).toThrow(/Cannot read the date '01.07.2026'/);
 	});
 });

@@ -392,7 +392,23 @@ describe('FinTSClient', () => {
 			);
 		});
 
-		it('uses MT940 when preferCamt is false', async () => {
+		// The choice used to be a boolean `preferCamt` that fell back to the other format
+		// when the account did not offer the preferred one. The caller could not tell
+		// which format it got, and the two put different vocabularies into the same
+		// fields — so a format the account does not offer is refused, not replaced.
+		it('refuses a format the account does not offer instead of falling back', async () => {
+			await expect(
+				client.getAccountStatements('1111222233', undefined, undefined, 'CAMT'),
+			).rejects.toThrow(/does not support account statements/);
+			expect(dialogStartMock).not.toHaveBeenCalled();
+		});
+
+		it('names the formats an account offers', () => {
+			expect(client.getSupportedStatementFormats('1234567890')).toEqual(['CAMT', 'MT940']);
+			expect(client.getSupportedStatementFormats('1111222233')).toEqual([]);
+		});
+
+		it('fetches MT940 when asked for it', async () => {
 			dialogStartMock.mockResolvedValueOnce(
 				new Map<string, ClientResponse | StatementResponse>([
 					[
@@ -440,7 +456,7 @@ describe('FinTSClient', () => {
 				'1234567890',
 				undefined,
 				undefined,
-				false,
+				'MT940',
 			)) as StatementResponse;
 
 			expect(response.success).toBe(true);

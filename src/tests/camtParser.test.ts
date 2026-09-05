@@ -1044,11 +1044,11 @@ describe('CamtParser', () => {
 		expect(transaction.valueDate).toBeInstanceOf(Date);
 		expect(transaction.valueDate?.getFullYear()).toBe(2025);
 		expect(transaction.valueDate?.getMonth()).toBe(11); // November (0-based)
-		expect(transaction.valueDate?.getUTCDate()).toBe(10);
+		expect(transaction.valueDate?.getDate()).toBe(10);
 		expect(transaction.entryDate).toBeInstanceOf(Date);
 		expect(transaction.entryDate?.getFullYear()).toBe(2025);
 		expect(transaction.entryDate?.getMonth()).toBe(11); // November (0-based)
-		expect(transaction.entryDate?.getUTCDate()).toBe(8);
+		expect(transaction.entryDate?.getDate()).toBe(8);
 
 		// Check transaction type and code fields
 		expect(transaction.fundsCode).toBe('DBIT');
@@ -1185,7 +1185,8 @@ describe('CamtParser — dates the bank did not send', () => {
 				entry('<BookgDt><Dt>2026-01-22</Dt></BookgDt>'),
 			),
 		).parse();
-		expect(statement.closingBalance?.date).toEqual(new Date('2026-01-22T00:00:00.000+01:00'));
+		// The calendar day the bank named, at local noon — not the instant of the offset.
+		expect(statement.closingBalance?.date).toEqual(new Date(2026, 0, 22, 12));
 	});
 
 	it('leaves out a balance without a date, and keeps the entries', () => {
@@ -1522,5 +1523,32 @@ describe('CamtParser — pending entries as comdirect sends them', () => {
 		expect(strom.entryDate).toBeUndefined();
 		expect(strom.valueDate).toBeUndefined();
 		expect(strom.bankReference).toBe('');
+	});
+});
+
+describe('CamtParser — a date with an offset is still a calendar day', () => {
+	// comdirect writes the booking date as `2025-12-08-01:00` and the value date as
+	// `2025-12-10`. Kept as instants, the booking date is midnight in the bank's zone —
+	// the day before, anywhere west of it — while the value date sits at local noon.
+	// The same booking then had two entry dates depending on the format it was fetched
+	// in, and the test machine in Berlin never saw it.
+	const report = (bookingDate: string, valueDate: string) =>
+		`<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">` +
+		`<BkToCstmrAcctRpt><Rpt><Id>R1</Id><Acct><Id><IBAN>DE991234567123456</IBAN></Id></Acct>` +
+		`<Ntry><Amt>1</Amt><CdtDbtInd>DBIT</CdtDbtInd>` +
+		`<BookgDt><Dt>${bookingDate}</Dt></BookgDt><ValDt><Dt>${valueDate}</Dt></ValDt>` +
+		`</Ntry></Rpt></BkToCstmrAcctRpt></Document>`;
+
+	it.each([
+		['2025-12-08-01:00', 'date with offset'],
+		['2025-12-08+01:00', 'date with positive offset'],
+		['2025-12-08T00:00:00.000+01:00', 'date-time at midnight with offset'],
+		['2025-12-08T23:59:59Z', 'date-time late in the day, UTC'],
+		['20251208', 'compact date'],
+	])('reads %s (%s) as December 8th at local noon', (bookingDate) => {
+		const [statement] = new CamtParser(report(bookingDate, '2025-12-10')).parse();
+		const [transaction] = statement.transactions;
+		expect(transaction.entryDate).toEqual(new Date(2025, 11, 8, 12));
+		expect(transaction.valueDate).toEqual(new Date(2025, 11, 10, 12));
 	});
 });
